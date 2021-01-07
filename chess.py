@@ -227,15 +227,5 @@ def print_board_nums (board):
             print()
     print()
 
-board = [empty for i in range(64)]
-board[27] = white_knight
-moves = piece_available_moves(board, 27)
-for i in range(64):
-    board[i] = black_pawn
-    if i in moves:
-        board[i] = 15
-    else:
-        board[i] = empty
-board[27] = white_knight
+board = init_board()
 print_board_nums(board)
-
