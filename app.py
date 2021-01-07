@@ -24,27 +24,28 @@ def piece_to_sprite_coords (piece):
 def spawn_pieces (groups, spritesheet, corner_x, corner_y, chess_board):
     for i, piece in enumerate(chess_board):
         if piece != chess.EMPTY:
-            x, y = chess_to_screen(corner_x, corner_y, i, 32)
-            x += 8
-            y += 8
+            x, y = chess_to_screen(corner_x, corner_y, i, 24)
+            x += 4
+            y += 3
             coords = piece_to_sprite_coords(piece)
             img = spritesheet.subsurface(coords)
             ChessSprite(x, y, 16, 16, img, *groups)
 
 def spawn_checkers (groups, spritesheet, corner_x, corner_y):
-    size = 32
+    size = 24
     for i in range(64):
         if chess.square_is_white(i):
-            rect = (80, 0, 32, 32)
+            rect = (72, 0, size, size)
         else:
-            rect = (48, 0, 32, 32)
+            rect = (48, 0, size, size)
         sprite = spritesheet.subsurface(rect)
         x, y = chess_to_screen(corner_x, corner_y, i, size)
         ChessSprite(x, y, size, size, sprite, *groups)
 
 def spawn_borders (groups, spritesheet, x0, y0):
     s = 16
-    length = 32 * 8
+    length = 24 * 8
+    num_edges = 12
     # Corners
     ChessSprite(x0 - s, y0 - s, s, s,
             spritesheet.subsurface((0, 0, 16, 16)), *groups)
@@ -55,7 +56,7 @@ def spawn_borders (groups, spritesheet, x0, y0):
     ChessSprite(x0 + length, y0 + length, s, s,
             spritesheet.subsurface((32, 32, 16, 16)), *groups)
     # Edges
-    for i in range(16):
+    for i in range(num_edges):
         ChessSprite(x0 + i * s, y0 - s, s, s,
                 spritesheet.subsurface((16, 0, 16, 16)), *groups)
         ChessSprite(x0 + i * s, y0 + length, s, s,
@@ -66,11 +67,13 @@ def spawn_borders (groups, spritesheet, x0, y0):
                 spritesheet.subsurface((32, 16, 16, 16)), *groups)
 
 def spawn_board_labels(groups, spritesheet, corner_x, corner_y):
+    size = 16
+    square = 24
     for i in range(8):
-        ChessSprite(corner_x + i * 32 + 8, corner_y + 8 * 33, 16, 16,
+        ChessSprite(corner_x + i * square + 4, corner_y + 8 * (square+1), size, size,
                 spritesheet.subsurface((i * 16, 112, 16, 16)), *groups)
-        ChessSprite(corner_x - 24, corner_y + i * 32 + 8, 16, 16,
-                spritesheet.subsurface((7*16 - i * 16, 96, 16, 16)), *groups)
+        ChessSprite(corner_x - square, corner_y + i * square + 4, size, size,
+                spritesheet.subsurface((7*size - i * size, 96, size, size)), *groups)
 
 def chess_to_screen (x0, y0, index, square_size):
     x1 = x0 + (index % 8) * square_size
@@ -94,7 +97,7 @@ def main ():
     board_sprites = pygame.sprite.Group()
     piece_sprites = pygame.sprite.Group()
     label_sprites = pygame.sprite.Group()
-    corner_x, corner_y = 128, 128
+    corner_x, corner_y = 160, 160
     spawn_checkers([all_sprites, board_sprites], spritesheet, corner_x, corner_y)
     spawn_borders([all_sprites, board_sprites], spritesheet, corner_x, corner_y)
     spawn_board_labels([all_sprites, label_sprites], spritesheet, corner_x, corner_y)
