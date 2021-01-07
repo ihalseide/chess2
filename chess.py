@@ -17,17 +17,16 @@ black_king = 12
 
 def piece_role (piece):
     '''Return the piece's role by converting it to the white team'''
-    if 0 < piece < 12:
-        if piece <= 6:
-            return piece
-        else:
-            return piece - 6
+    if white_pawn <= piece <= black_king:
+        if piece > white_king:
+            piece -= white_king
+        return piece
     else:
         return None
 
 def piece_allegiance (piece):
     '''Return white king or black king'''
-    if empty < piece <= black_king:
+    if white_pawn <= piece <= black_king:
         if white_pawn <= piece <= black_king:
             return white_king
         else:
@@ -35,12 +34,12 @@ def piece_allegiance (piece):
     else:
         return None
 
-def init_board ():
-    board = [empty for _ in range(8 * 8)]
+def init_board () -> list:
+    board = [empty for i in range(64)]
     # Place the pawns
-    for c in range(8):
-        board[c + 8] = white_pawn
-        board[63 - 8 - c] = black_pawn
+    for i in range(8):
+        board[i + 8] = white_pawn
+        board[55 - i] = black_pawn
     # Place the rooks
     board[0] = white_rook
     board[7] = white_rook
@@ -125,7 +124,7 @@ def available_knight_moves (board, index):
         new_index = index + di
         if new_index in range(64):
             if board[new_index] == empty or pieces_are_enemies(board[index], board[new_index]):
-                moves += new_index
+                moves.append(new_index)
     return moves
 
 def available_rook_moves (board, index):
@@ -161,7 +160,7 @@ def pieces_are_enemies (p1, p2):
     if None in (p1_allegiance, p2_allegiance):
         return False 
     else:
-        return p1_allegiance != p2_allegiance
+        return not (p1_allegiance == p2_allegiance)
 
 def piece_available_moves (board, index) -> list:
     piece = piece_role(board[index])
@@ -180,6 +179,31 @@ def piece_available_moves (board, index) -> list:
     else:
         raise ValueError('invalid piece')
 
+def piece_threat_list (board, index):
+    '''Return a list of indices of enemy pieces
+    that threaten the given piece'''
+    piece = board[index]
+    result = []
+    for i, other in enumerate(board):
+        if pieces_are_enemies(piece, other):
+            result += piece_available_moves(board, i)
+    return result
+
+def find_piece (board, piece):
+    for i, p in enumerate(board):
+        if p == piece:
+            return i
+
+def king_is_in_check (board, king):
+    king_index = find_piece(board, king)
+    print('king_index', king_index)
+    return piece_is_threatened(board, king_index)
+
+def piece_is_threatened (board, index) -> bool:
+    threats = piece_threat_list(board, index)
+    print('threats', threats)
+    return bool(0 < len(threats))
+
 def square_is_white (index):
     if index not in range(64):
         raise ValueError('index not in range of the board space')
@@ -195,6 +219,23 @@ def print_ascii_checkers ():
         if i in enders:
             print()
 
-print_ascii_checkers()
-board = init_board()
-print(piece_available_moves(board, 0))
+def print_board_nums (board):
+    print('(hexadecimal)')
+    for i, x in enumerate(board):
+        print(hex(x)[2:].upper(), end=' ')
+        if i != 0 and (i+1) % 8 == 0:
+            print()
+    print()
+
+board = [empty for i in range(64)]
+board[27] = white_knight
+moves = piece_available_moves(board, 27)
+for i in range(64):
+    board[i] = black_pawn
+    if i in moves:
+        board[i] = 15
+    else:
+        board[i] = empty
+board[27] = white_knight
+print_board_nums(board)
+
