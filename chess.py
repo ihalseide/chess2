@@ -40,29 +40,29 @@ def init_board () -> list:
     board = [EMPTY for i in range(64)]
     # pawns
     for i in range(8):
-        board[i + 8] = WHITE_PAWN
-        board[55 - i] = BLACK_PAWN
+        board[i + 8] = BLACK_PAWN
+        board[55 - i] = WHITE_PAWN
     # rooks
-    board[0] = WHITE_ROOK
-    board[7] = WHITE_ROOK
-    board[56] = BLACK_ROOK
-    board[63] = BLACK_ROOK
+    board[0] = BLACK_ROOK
+    board[7] = BLACK_ROOK
+    board[56] = WHITE_ROOK
+    board[63] = WHITE_ROOK
     # knights
-    board[1] = WHITE_KNIGHT
-    board[6] = WHITE_KNIGHT
-    board[57] = BLACK_KNIGHT
-    board[62] = BLACK_KNIGHT
+    board[1] = BLACK_KNIGHT
+    board[6] = BLACK_KNIGHT
+    board[57] = WHITE_KNIGHT
+    board[62] = WHITE_KNIGHT
     # bishops
-    board[2] = WHITE_BISHOP
-    board[5] = WHITE_BISHOP
-    board[58] = BLACK_BISHOP
-    board[61] = BLACK_BISHOP
+    board[2] = BLACK_BISHOP
+    board[5] = BLACK_BISHOP
+    board[58] = WHITE_BISHOP
+    board[61] = WHITE_BISHOP
     # queens
-    board[3] = WHITE_QUEEN
-    board[59] = BLACK_QUEEN
+    board[3] = BLACK_QUEEN
+    board[59] = WHITE_QUEEN
     # kings
-    board[4] = WHITE_KING
-    board[60] = BLACK_KING
+    board[4] = BLACK_KING
+    board[60] = WHITE_KING
     return board
 
 def pawn_deltas (board, index):
@@ -73,7 +73,7 @@ def pawn_deltas (board, index):
     forward, forward_2 = 8, 16
     diag_r, diag_l = 7, 9
 
-    if allegiance == BLACK_KING:
+    if allegiance == WHITE_KING:
         forward *= -1
         forward_2 *= -1
         diag_r *= -1
