@@ -211,14 +211,6 @@ def square_is_white (index):
     c = index % 2
     return (r and c) or not (r or c) 
 
-def print_ascii_checkers ():
-    enders = range(7, 64, 8)
-    for i in range(64):
-        s = '##' if square_is_white(i) else '__'
-        print(end=s)
-        if i in enders:
-            print()
-
 def print_board_nums (board):
     print('(hexadecimal)')
     for i, x in enumerate(board):
