@@ -58,11 +58,11 @@ def init_board () -> list:
     board[58] = BLACK_BISHOP
     board[61] = BLACK_BISHOP
     # queens
-    board[4] = WHITE_QUEEN
-    board[60] = BLACK_QUEEN
+    board[3] = WHITE_QUEEN
+    board[59] = BLACK_QUEEN
     # kings
-    board[3] = WHITE_KING
-    board[59] = BLACK_KING
+    board[4] = WHITE_KING
+    board[60] = BLACK_KING
     return board
 
 def pawn_deltas (board, index):
@@ -75,9 +75,9 @@ def pawn_deltas (board, index):
 
     if allegiance == BLACK_KING:
         forward *= -1
+        forward_2 *= -1
         diag_r *= -1
         diag_l *= -1
-        forward_2 *= -1
 
     forward += index
     diag_r += index
