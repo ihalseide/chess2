@@ -6,9 +6,8 @@ import chess
 class ChessSprite (pygame.sprite.Sprite):
     def __init__(self, x, y, width, height, image, *groups):
         pygame.sprite.Sprite.__init__(self, *groups)
-        self.rect = (x, y, width, height)
+        self.rect = pygame.Rect(x, y, width, height)
         self.image = image
-        self.show = True
 
 def piece_to_sprite_coords (piece):
     role = chess.piece_role(piece)
@@ -33,20 +32,15 @@ def spawn_pieces (groups, spritesheet, corner_x, corner_y, chess_board):
             ChessSprite(x, y, 16, 16, img, *groups)
 
 def spawn_checkers (groups, spritesheet, corner_x, corner_y):
-    # 1 chess square = 4 sprites
     size = 32
-    sprite_size = 16
     for i in range(64):
         if chess.square_is_white(i):
-            sprite_x, sprite_y = (48, 0)
+            rect = (80, 0, 32, 32)
         else:
-            sprite_x, sprite_y = (64, 0)
-        sprite_grab = (sprite_x, sprite_y, sprite_size, sprite_size)
-        sprite = spritesheet.subsurface(sprite_grab)
-        x1, y1 = chess_to_screen(corner_x, corner_y, i, size)
-        for x in (x1, x1 + sprite_size):
-            for y in (y1, y1 + sprite_size):
-                ChessSprite(x, y, sprite_size, sprite_size, sprite, *groups)
+            rect = (48, 0, 32, 32)
+        sprite = spritesheet.subsurface(rect)
+        x, y = chess_to_screen(corner_x, corner_y, i, size)
+        ChessSprite(x, y, size, size, sprite, *groups)
 
 def spawn_borders (groups, spritesheet, x0, y0):
     s = 16
@@ -71,6 +65,13 @@ def spawn_borders (groups, spritesheet, x0, y0):
         ChessSprite(x0 + length, y0 + i * s, s, s,
                 spritesheet.subsurface((32, 16, 16, 16)), *groups)
 
+def spawn_board_labels(groups, spritesheet, corner_x, corner_y):
+    for i in range(8):
+        ChessSprite(corner_x + i * 32 + 8, corner_y + 8 * 33, 16, 16,
+                spritesheet.subsurface((i * 16, 112, 16, 16)), *groups)
+        ChessSprite(corner_x - 24, corner_y + i * 32 + 8, 16, 16,
+                spritesheet.subsurface((7*16 - i * 16, 96, 16, 16)), *groups)
+
 def chess_to_screen (x0, y0, index, square_size):
     x1 = x0 + (index % 8) * square_size
     y1 = y0 + (index // 8) * square_size
@@ -92,9 +93,11 @@ def main ():
     all_sprites = pygame.sprite.Group()
     board_sprites = pygame.sprite.Group()
     piece_sprites = pygame.sprite.Group()
+    label_sprites = pygame.sprite.Group()
     corner_x, corner_y = 128, 128
     spawn_checkers([all_sprites, board_sprites], spritesheet, corner_x, corner_y)
     spawn_borders([all_sprites, board_sprites], spritesheet, corner_x, corner_y)
+    spawn_board_labels([all_sprites, label_sprites], spritesheet, corner_x, corner_y)
     spawn_pieces([all_sprites, piece_sprites], spritesheet, corner_x, corner_y, board)
     while running:
         clock.tick(30)
@@ -106,9 +109,12 @@ def main ():
                 if event.key == pygame.K_ESCAPE:
                     running = False
                     break
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                pass
         screen.fill((120, 120, 120))
         board_sprites.draw(screen)
         piece_sprites.draw(screen)
+        label_sprites.draw(screen)
         pygame.display.update()
 
 if __name__ == '__main__':
