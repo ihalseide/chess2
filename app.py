@@ -88,6 +88,8 @@ def screen_to_chess (x0, y0, x, y, square_size):
 def main ():
     pygame.init()
     screen = pygame.display.set_mode((512, 512))
+    icon = pygame.image.load('icon.png')
+    pygame.display.set_icon(icon)
     pygame.display.set_caption('chess.exe')
     clock = pygame.time.Clock()
     running = True
