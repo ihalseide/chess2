@@ -1,5 +1,7 @@
 # This file contains the main code and logic behind the game of Chess
 
+import string
+
 # Use this formatting to avoid typing mistakes, since it is important that
 # these numeric constants are correct
 EMPTY, \
@@ -16,6 +18,41 @@ BLACK_ROOK, \
 BLACK_QUEEN, \
 BLACK_KING \
 = range(13)
+
+def pieces_are_enemies (p1, p2):
+    p1_allegiance = piece_allegiance(p1)
+    p2_allegiance = piece_allegiance(p2)
+    if None in (p1_allegiance, p2_allegiance):
+        return False 
+    else:
+        return not (p1_allegiance == p2_allegiance)
+
+def name_allegiance (allegiance) -> str:
+    if allegiance == WHITE_KING:
+        return 'white'
+    elif allegiance == BLACK_KING:
+        return 'black'
+
+def name_role (role) -> str:
+    if role == WHITE_PAWN:
+        return 'pawn'
+    elif role == WHITE_BISHOP:
+        return 'bishop'
+    elif role == WHITE_KNIGHT:
+        return 'knight'
+    elif role == WHITE_ROOK:
+        return 'rook'
+    elif role == WHITE_QUEEN:
+        return 'queen'
+    elif role == WHITE_KING:
+        return 'king'
+
+def name_piece (piece) -> str:
+    '''Name a piece in English'''
+    allegiance = name_allegiance(piece_allegiance(piece))
+    role = name_role(piece_role(piece))
+    if allegiance and role:
+        return ' '.join((allegiance, role))
 
 def piece_role (piece):
     '''Return the piece's role by converting it to the white team'''
@@ -36,245 +73,287 @@ def piece_allegiance (piece):
     else:
         return None
 
-def init_board () -> list:
-    board = [EMPTY for i in range(64)]
-    # pawns
-    for i in range(8):
-        board[i + 8] = BLACK_PAWN
-        board[55 - i] = WHITE_PAWN
-    # rooks
-    board[0] = BLACK_ROOK
-    board[7] = BLACK_ROOK
-    board[56] = WHITE_ROOK
-    board[63] = WHITE_ROOK
-    # knights
-    board[1] = BLACK_KNIGHT
-    board[6] = BLACK_KNIGHT
-    board[57] = WHITE_KNIGHT
-    board[62] = WHITE_KNIGHT
-    # bishops
-    board[2] = BLACK_BISHOP
-    board[5] = BLACK_BISHOP
-    board[58] = WHITE_BISHOP
-    board[61] = WHITE_BISHOP
-    # queens
-    board[3] = BLACK_QUEEN
-    board[59] = WHITE_QUEEN
-    # kings
-    board[4] = BLACK_KING
-    board[60] = WHITE_KING
-    return board
-
-def pawn_deltas (board, index):
-    piece = board[index]
-    allegiance = piece_allegiance(piece)
-
-    # White allegiance initial values
-    forward, forward_2 = 8, 16
-    diag_r, diag_l = 7, 9
-
+def role_as_allegiance (role, allegiance):
     if allegiance == WHITE_KING:
-        forward *= -1
-        forward_2 *= -1
-        diag_r *= -1
-        diag_l *= -1
+        return role
+    elif allegiance == BLACK_KING:
+        return role + 6
+    else:
+        return None
 
-    forward += index
-    diag_r += index
-    diag_l += index
-    forward_2 += index
+class Board:
+    '''A Chess game board, with pieces on it'''
 
+    def __init__ (self):
+        self.rows = 8
+        self.columns = 8
+        self.squares = self.rows * self.columns
+        self.pieces = [EMPTY for x in range(self.squares)]
+
+    def in_range (self, row, col):
+        return row in range(0, self.rows) and col in range(self.columns)
+
+    def rowcol_to_index (self, row, col):
+        if self.in_range(row, col):
+            return (row * self.columns) + col
+        else:
+            return None
+
+    def index_to_rowcol (self, index):
+        if index in range(self.squares):
+            row = index // 8
+            col = index % 8
+            return (row, col)
+        else:
+            return None
+
+    def set (self, row, col, piece):
+        i = self.rowcol_to_index(row, col)
+        if i is not None:
+            self.pieces[i] = piece
+        else:
+            raise ValueError('invalid row or column')
+
+    def get (self, row, col):
+        i = self.rowcol_to_index(row, col)
+        if i is not None:
+            return self.pieces[i]
+        else:
+            raise ValueError('invalid row or column')
+
+    def copy (self):
+        new = Board()
+        for index, piece in enumerate(self.pieces):
+            new.pieces[index] = piece
+        return new
+
+    def piece_is_threatened (self, row, col):
+        threats = self.piece_threat_list(row, col)
+        return len(threats) > 0
+
+    def piece_threat_list (self, row, col):
+        '''Return a list of enemy pieces that threaten the given piece'''
+        piece = self.get(row, col)
+        result = []
+        for i in range(self.squares):
+            other_row, other_col = self.index_to_rowcol(i)
+            if self.piece_is_threatened_by(row, col, other_row, other_col):
+                result.append((other_row, other_col))
+        return result
+
+    def piece_is_threatened_by (self, row, col, by_row, by_col):
+        piece = self.get(row, col)
+        other = self.get(by_row, by_col)
+        if pieces_are_enemies(piece, other):
+            return (row, col) in self.piece_moves(by_row, by_col)
+        else:
+            return False
+
+    def empty_or_enemy (self, piece, row, col):
+        return (self.get(row, col) == EMPTY) or pieces_are_enemies(piece, self.get(row, col))
+
+    def piece_moves (self, row, col) -> list:
+        role = piece_role(self.get(row, col))
+        if role == WHITE_PAWN:
+            return self.pawn_moves(row, col)
+        elif role == WHITE_BISHOP:
+            return self.bishop_moves(row, col)
+        elif role == WHITE_KNIGHT:
+            return self.knight_moves(row, col)
+        elif role == WHITE_ROOK:
+            return self.rook_moves(row, col)
+        elif role == WHITE_QUEEN:
+            return self.queen_moves(row, col)
+        elif role == WHITE_KING:
+            return self.king_moves(row, col)
+        else:
+            return []
+
+    def pawn_moves (self, row, col):
+        moves = []
+        piece = self.get(row, col)
+        forward, forward_2, diag_r, diag_l = pawn_plus_deltas(row, col, piece_allegiance(piece))
+        # Moving forward 1 and 2 spaces
+        if self.in_range(*forward) and self.get(*forward) == EMPTY:
+            moves.append(forward)
+            # First move can be 2 spaces too
+            if row in (1, 6) and self.in_range(*forward_2) and self.get(*forward_2) == EMPTY:
+                moves.append(forward_2)
+        # Capturing diagonals
+        for diag in (diag_r, diag_l):
+            if self.in_range(*diag) and pieces_are_enemies(piece, self.get(*diag)):
+                moves.append(diag)
+        return moves
+
+    def bishop_moves (self, row, col):
+        moves = []
+        for drow in (-1, 1):
+            for dcol in (-1, 1):
+                new_row = row + drow
+                new_col = col + dcol
+                while self.in_range(new_row, new_col) and self.get(new_row, new_col) == EMPTY:
+                    moves.append((new_row, new_col))
+                    new_row += drow
+                    new_col += dcol
+                # The very last square traversed can be a capture
+                piece = self.get(row, col)
+                if self.in_range(new_row, new_col) and pieces_are_enemies(piece, self.get(new_row, new_col)):
+                    moves.append((new_row, new_col))
+        return moves
+
+    def knight_moves (self, row, col):
+        leaping_deltas = [(-1, -2), (1, -2), (-1, 2), (1, 2), (2, -1), (2, 1), (-2, -1), (-2, 1)]
+        moves = []
+        piece = self.get(row, col)
+        for drow, dcol in leaping_deltas:
+            new_row = row + drow
+            new_col = col + dcol
+            if self.in_range(new_row, new_col) and self.empty_or_enemy(piece, new_row, new_col):
+                moves.append((new_row, new_col))
+        return moves
+
+    def rook_moves (self, row, col):
+        moves = []
+        for drow, dcol in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            new_row = row + drow
+            new_col = col + dcol
+            while self.in_range(new_row, new_col) and self.get(new_row, new_col) == EMPTY:
+                moves.append((new_row, new_col))
+                new_row += drow
+                new_col += dcol
+            # The very last square traversed can be a capture
+            piece = self.get(row, col)
+            if self.in_range(new_row, new_col) and self.empty_or_enemy(piece, new_row, new_col):
+                moves.append((new_row, new_col))
+        return moves
+
+    def queen_moves (self, row, col):
+        rook = self.rook_moves(row, col)
+        bishop = self.bishop_moves(row, col)
+        return rook + bishop
+
+    def king_moves (self, row, col):
+        moves = []
+        piece = self.get(row, col)
+        for drow in (-1, 0, 1):
+            for dcol in (-1, 0, 1):
+                if drow == 0 and dcol == 0:
+                    continue
+                new_row = row + drow
+                new_col = col + dcol
+                if self.in_range(new_row, new_col) and self.empty_or_enemy(piece, new_row, new_col):
+                    moves.append((new_row, new_col))
+        return moves
+
+    def white_pieces (self):
+        for x in self.allegiance_pieces(WHITE_KING):
+            yield x
+
+    def black_pieces (self):
+        for x in self.allegiance_pieces(BLACK_KING):
+            yield x
+
+    def allegiance_pieces (self, allegiance):
+        '''Generator for all pieces that have the given allegiance.
+        YIELDS (piece index, piece id)'''
+        for index, piece in enumerate(self.pieces):
+            if piece_allegiance(piece) == allegiance:
+                yield self.index_to_rowcol(index), piece
+
+    def allegiance_moves (self, allegiance):
+        '''Get all moves that a team can make, including not allowing
+        moves that put the King in Check'''
+        all_moves = dict()
+        for (row, col), piece in self.allegiance_pieces(allegiance):
+            no_threat = lambda to_rowcol: not self.move_would_threaten_king(row, col, *to_rowcol, allegiance)
+            moves = filter(no_threat, self.piece_moves(row, col))
+            all_moves[(row, col)] = list(moves)
+        return all_moves
+
+    def move_would_threaten_king (self, from_row, from_col, to_row, to_col, allegiance):
+        simulation_board = self.copy()
+        simulation_board.move(from_row, from_col, to_row, to_col)
+        return simulation_board.king_is_in_check(allegiance)
+
+    def white_moves (self):
+        return self.team_moves(WHITE_KING)
+
+    def black_moves (self):
+        return self.team_moves(BLACK_KING)
+
+    def find_piece (self, piece):
+        for i, p in enumerate(self.pieces):
+            if p == piece:
+                return self.index_to_rowcol(i)
+
+    def find_pieces (self, piece):
+        found = []
+        for i, p in enumerate(self.pieces):
+            if p == piece:
+                found.append(self.index_to_rowcol(i))
+        return tuple(found)
+
+    def king_is_in_check (self, king):
+        king_row, king_col = self.find_piece(king)
+        return self.piece_is_threatened(king_row, king_col)
+
+    def move (self, from_row, from_col, to_row, to_col):
+        self.set(to_row, to_col, self.get(from_row, from_col))
+        self.set(from_row, from_col, EMPTY)
+
+    def is_legal_move (self, allegiance, from_row, from_col, to_row, to_col):
+        # TODO: pre-calculate legal moves every time a real move is made
+        # This calculates all moves available currently
+        all_moves = self.allegiance_moves(allegiance)
+        the_piece_moves = all_moves.get((from_row, from_col))
+        if the_piece_moves:
+            return (to_row, to_col) in the_piece_moves
+        else:
+            return False
+
+def pawn_deltas (allegiance):
+    # White allegiance initial values
+    # (delta row, delta column)
+    forward = [1, 0]
+    forward_2 = [2, 0]
+    diag_r = [1, 1]
+    diag_l = [1, -1]
+    if allegiance == WHITE_KING:
+        forward[0] *= -1
+        forward_2[0] *= -1
+        diag_r[0] *= -1
+        diag_l[0] *= -1
     return forward, forward_2, diag_r, diag_l
 
-def pawn_moves (board, index):
-    # TODO: implement en-passant maybe as a special rule, not
-    # in this function...
-    available = []
-    piece = board[index]
-    forward, forward_2, diag_r, diag_l = pawn_deltas(board, index)
-    # Moving forward 1 and 2 spaces
-    if forward in range(64) and board[forward] == EMPTY:
-        available.append(forward)
-        if (8 <= index <= 15) or (48 <= index <= 55):
-            if forward_2 in range(64) and board[forward_2] == EMPTY:
-                # First move can be 2 spaces too
-                available.append(forward_2)
-    # Capturing diagonal one way
-    if diag_r in range(64) and pieces_are_enemies(piece, board[diag_r]):
-        available.append(diag_r)
-    # Capturing diagonal the other way
-    if diag_l in range(64) and pieces_are_enemies(piece, board[diag_l]):
-        available.append(diag_l)
-    return available
+def pawn_plus_deltas (row, col, allegiance):
+    deltas = list(pawn_deltas(allegiance))
+    for i, d in enumerate(deltas):
+        d[0] += row
+        d[1] += col
+        deltas[i] = tuple(deltas[i])
+    return tuple(deltas)
 
-def bishop_moves (board, index):
-    diagonal_deltas = (-9, -7, 9, 7)
-    moves = []
-    for di in diagonal_deltas:
-        new_index = index + di
-        while new_index in range(64) and board[new_index] == EMPTY:
-            moves.append(new_index)
-            new_index += di
-        if new_index in range(64) and pieces_are_enemies(board[index], board[new_index]):
-            moves.append(new_index)
-    return moves
+def standard_board ():
+    board = Board()
+    for col in range(8):
+        board.set(1, col, BLACK_PAWN)
+        board.set(6, col, WHITE_PAWN)
+    for row, allegiance in zip((0, 7), (BLACK_KING, WHITE_KING)):
+        board.set(row, 0, role_as_allegiance(WHITE_ROOK, allegiance))
+        board.set(row, 1, role_as_allegiance(WHITE_KNIGHT, allegiance))
+        board.set(row, 2, role_as_allegiance(WHITE_BISHOP, allegiance))
+        board.set(row, 3, role_as_allegiance(WHITE_QUEEN, allegiance))
+        board.set(row, 4, role_as_allegiance(WHITE_KING, allegiance))
+        board.set(row, 5, role_as_allegiance(WHITE_BISHOP, allegiance))
+        board.set(row, 6, role_as_allegiance(WHITE_KNIGHT, allegiance))
+        board.set(row, 7, role_as_allegiance(WHITE_ROOK, allegiance))
+    return board
 
-def knight_moves (board, index):
-    leaping_deltas = (-6, 6, -10, 10, -15, 15, -17, 17)
-    moves = []
-    for di in leaping_deltas:
-        new_index = index + di
-        if new_index in range(64):
-            if board[new_index] == EMPTY or pieces_are_enemies(board[index], board[new_index]):
-                moves.append(new_index)
-    return moves
+def square_is_white (row, col):
+    return (row and col) or not (row or col) 
 
-def rook_moves (board, index):
-    perpendicular_deltas = (-1, 1, -8, 8)
-    moves = []
-    for di in perpendicular_deltas:
-        new_index = index + di
-        while new_index in range(64) and board[new_index] == EMPTY:
-            moves.append(new_index)
-            new_index += di
-        if new_index in range(64) and pieces_are_enemies(board[index], board[new_index]):
-            moves.append(new_index)
-    return moves
-
-def queen_moves (board, index):
-    rook = rook_moves(board, index)
-    bishop = bishop_moves(board, index)
-    return rook + bishop
-
-def king_moves (board, index):
-    neighbor_deltas = (-1, 1, -8, 8, 7, 9, -7, -9)
-    moves = []
-    for di in neighbor_deltas:
-        new_index = index + di
-        if new_index in range(64):
-            if board[new_index] == EMPTY or pieces_are_enemies(board[index], board[new_index]):
-                moves.append(new_index)
-    return moves
-
-def pieces_are_enemies (p1, p2):
-    p1_allegiance = piece_allegiance(p1)
-    p2_allegiance = piece_allegiance(p2)
-    if None in (p1_allegiance, p2_allegiance):
-        return False 
-    else:
-        return not (p1_allegiance == p2_allegiance)
-
-def piece_moves (board, index) -> list:
-    role = piece_role(board[index])
-    if role == WHITE_PAWN:
-        return pawn_moves(board, index)
-    elif role == WHITE_BISHOP:
-        return bishop_moves(board, index)
-    elif role == WHITE_KNIGHT:
-        return knight_moves(board, index)
-    elif role == WHITE_ROOK:
-        return rook_moves(board, index)
-    elif role == WHITE_QUEEN:
-        return queen_moves(board, index)
-    elif role == WHITE_KING:
-        return king_moves(board, index)
-    else:
-        raise ValueError('invalid piece')
-
-def piece_is_threatened_by (board, index, other_index):
-    piece = board[index]
-    other = board[other_index]
-    return ((pieces_are_enemies(piece, other))
-            and (index in piece_available_moves(board, other_index)))
-
-def piece_threat_list (board, index):
-    '''Return a list of indices of enemy pieces
-    that threaten the given piece'''
-    piece = board[index]
-    result = []
-    for i, _ in enumerate(board):
-        if piece_is_threatened_by(board, index, i):
-            result.append(i)
-    return result
-
-def find_piece (board, piece):
-    for i, p in enumerate(board):
-        if p == piece:
-            return i
-
-def king_is_in_check (board, king):
-    '''[WHITE_KING | BLACK_KING] -> [True | False]'''
-    king_index = find_piece(board, king)
-    return piece_is_threatened(board, king_index)
-
-def piece_is_threatened (board, index):
-    threats = piece_threat_list(board, index)
-    return len(threats) > 0
-
-def square_is_white (index):
-    if index not in range(64):
-        raise ValueError('index not in range of the board space')
-    r = (index // 8) % 2
-    c = index % 2
-    return (r and c) or not (r or c) 
-
-def print_board_nums (board):
-    # THIS IS USEFUL FOR DEBUGGING
-    print('(hexadecimal)')
-    for i, x in enumerate(board):
-        print(hex(x)[2:].upper(), end=' ')
-        if i != 0 and (i+1) % 8 == 0:
-            print()
-    print()
-
-def index_name (index):
-    if index in range(64):
-        row = index // 8
-        col = index % 8
-        letter = 'ABCDEFGH'[7 - col]
-        return letter + str(row + 1)
-    else:
-        raise ValueError('index out of range')
-
-def piece_name_allegiance (allegiance) -> str:
-    if allegiance == WHITE_KING:
-        return 'white'
-    else:
-        return 'black'
-
-def piece_name_role (role) -> str:
-    if role == WHITE_PAWN:
-        return 'pawn'
-    elif role == WHITE_BISHOP:
-        return 'bishop'
-    elif role == WHITE_KNIGHT:
-        return 'knight'
-    elif role == WHITE_ROOK:
-        return 'rook'
-    elif role == WHITE_QUEEN:
-        return 'queen'
-    elif role == WHITE_KING:
-        return 'king'
-    else:
-        return ValueError('invalid chess piece role')
-
-def piece_name (piece) -> str:
-    '''Name a piece in English'''
-    allegiance = piece_name_allegiance(piece_allegiance(piece))
-    role = piece_name_role(piece_role(piece))
-    return allegiance + ' ' + role
-
-def piece_describe (board, index) -> str:
-    '''Describe a piece on the board in English'''
-    piece = board[index]
-    coord = index_name(index)
-    if piece == EMPTY:
-        return '%s is EMPTY' %(coord)
-    else:
-        name = piece_name(piece)
-        moves = ' or '.join([index_name(x) for x in piece_moves(board, index)])
-        if moves:
-            return 'the %s at %s can move to %s' %(name, coord, moves)
-        else:
-            return 'the %s at %s can not move' %(name, coord)
+def name_square (row, col):
+    max_rows = 8
+    letter = string.ascii_uppercase[col]
+    return letter + str(max_rows - row)
 
