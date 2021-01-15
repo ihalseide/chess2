@@ -168,7 +168,9 @@ class PlayState (State):
                 print('try a move...', end=' ')
             if self.chess_board.is_legal_move(self.get_current_team(), *self.selected_start, *self.selected_end):
                 self.chess_board.move(*self.selected_start, *self.selected_end)
-                self.move_log.append('{} --> {}'.format(chess.name_square(*self.selected_start), chess.name_square(*self.selected_end)))
+                log_from = chess.name_square(*self.selected_start)
+                log_to = chess.name_square(*self.selected_end)
+                self.move_log.append('{} to {}'.format(log_from, log_to))
                 board_update = True
             self.selected_start = None
             self.selected_end = None
@@ -188,10 +190,13 @@ class PlayState (State):
                     board_update = True
                     self.move_log.append('O-O-O')
         if board_update:
-            self.turn += 1
-            self.spawn_pieces()
-            self.selected_start = None
-            self.selected_end = None
+            self.next_turn()
+
+    def next_turn (self):
+        self.turn += 1
+        self.spawn_pieces()
+        self.selected_start = None
+        self.selected_end = None
 
     def display (self, screen):
         screen.fill((120, 120, 120))
@@ -199,13 +204,9 @@ class PlayState (State):
         self.background_sprites.draw(screen)
         self.piece_sprites.draw(screen)
         self.floating_sprites.draw(screen)
+
         if self.debug_corner:
             pygame.draw.rect(screen, (0, 255, 255), (self.corner_x, self.corner_y, 10, 10))
-
-        if self.get_current_team() == chess.BLACK_KING:
-            pygame.draw.rect(screen, (0, 0, 0), (self.corner_x-16, self.corner_y, 10, 10))
-        else:
-            pygame.draw.rect(screen, (255, 255, 255), (self.corner_x-32, self.corner_y, 10, 10))
 
         pygame.display.update()
 
