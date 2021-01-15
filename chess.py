@@ -89,6 +89,7 @@ class Board:
         self.columns = 8
         self.squares = self.rows * self.columns
         self.pieces = [EMPTY for x in range(self.squares)]
+        self.has_moved = [False for x in range(self.squares)]
 
     def in_range (self, row, col):
         return row in range(0, self.rows) and col in range(self.columns)
@@ -298,8 +299,65 @@ class Board:
         return self.piece_is_threatened(king_row, king_col)
 
     def move (self, from_row, from_col, to_row, to_col):
+        i = self.rowcol_to_index(from_row, from_col)
+        self.has_moved[i] = True
         self.set(to_row, to_col, self.get(from_row, from_col))
         self.set(from_row, from_col, EMPTY)
+
+    def is_king_moved (self, king)
+        if king == WHITE_KING:
+            king_i = self.rowcol_to_index(7, 4)
+        elif king == BLACK_KING:
+            king_i = self.rowcol_to_index(0, 4)
+        else:
+            raise ValueError(str(king))
+        return self.has_moved[king_i]
+
+    def king_can_castle_long (self, king):
+        if king == WHITE_KING:
+            rook_i = self.rowcol_to_index(7, 0)
+            empty1 = self.get(7, 1)
+            empty2 = self.get(7, 2)
+        elif king == BLACK_KING:
+            rook_i = self.rowcol_to_index(0, 0)
+            empty1 = self.get(0, 1)
+            empty2 = self.get(0, 2)
+        else:
+            raise ValueError('not a king: %s' % str(king))
+        king_moved = self.is_king_moved(king)
+        rook_moved = self.has_moved[rook_i]
+        is_clear = (empty1 == EMPTY) and (empty2 == EMPTY)
+        return is_clear and (not king_moved) and (not rook_moved)
+
+    def move_castle_long (self, king):
+        assert king in (WHITE_KING, BLACK_KING)
+        row, king_col = self.find_piece(king)
+        rook_col = 0
+        self.move(row, king_col, row, 2)
+        self.move(row, rook_col, row, 3)
+
+    def king_can_castle_short (self, king):
+        if king == WHITE_KING:
+            rook_i = self.rowcol_to_index(7, 7)
+            empty1 = self.get(7, 6)
+            empty2 = self.get(7, 5)
+        elif king == BLACK_KING:
+            rook_i = self.rowcol_to_index(0, 7)
+            empty1 = self.get(0, 6)
+            empty2 = self.get(0, 5)
+        else:
+            raise ValueError('not a king: %s' % str(king))
+        king_moved = self.is_king_moved(king)
+        rook_moved = self.has_moved[rook_i]
+        is_clear = (empty1 == EMPTY) and (empty2 == EMPTY)
+        return is_clear and (not king_moved) and (not rook_moved)
+
+    def move_castle_short (self, king):
+        assert king in (WHITE_KING, BLACK_KING)
+        row, king_col = self.find_piece(king)
+        rook_col = 7
+        self.move(row, king_col, row, 6)
+        self.move(row, rook_col, row, 5)
 
     def is_legal_move (self, allegiance, from_row, from_col, to_row, to_col):
         # TODO: pre-calculate legal moves every time a real move is made
