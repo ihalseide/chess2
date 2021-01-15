@@ -68,8 +68,7 @@ class PlayState (State):
 
     def __init__ (self):
         State.__init__(self, next_state=MenuState)
-        self.chess_board = chess.standard_board()
-        print(self.chess_board.allegiance_moves(chess.WHITE_KING))
+        self.chess_board = chess.Board()
         self.turn = 0
         self.selected_start = None
         self.selected_end = None
@@ -81,8 +80,10 @@ class PlayState (State):
                 self.board_image, [self.background_sprites])
         self.board_rect = self.board_sprite.rect.inflate(-32, -32)
         self.selection_sprite = Sprite(0, 0, 32, 32, self.selection_img, self.floating_sprites)
+        self.do_short_castle = False
+        self.do_long_castle = False
 
-    def get_current_allegiance (self):
+    def get_current_team (self):
         if self.turn % 2 == 0:
             return chess.WHITE_KING
         else:
@@ -101,7 +102,7 @@ class PlayState (State):
                 piece = self.chess_board.get(row, col)
                 if piece == chess.EMPTY:
                     continue
-                if chess.piece_allegiance(piece) == chess.WHITE_KING:
+                if chess.piece_team(piece) == chess.WHITE_KING:
                     sheet = self.white_sprites
                 else:
                     sheet = self.black_sprites
@@ -126,12 +127,17 @@ class PlayState (State):
             return x, y
 
     def note_event (self, event):
-        if event.type == pygame.MOUSEBUTTONDOWN:
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_c:
+                self.do_short_castle = True
+            elif event.key == pygame.K_k:
+                self.do_long_castle = True
+        elif event.type == pygame.MOUSEBUTTONDOWN:
             rowcol = self.screen_to_board(*event.pos)
             if rowcol:
                 selected_piece = self.chess_board.get(*rowcol)
-                selected_allegiance = chess.piece_allegiance(selected_piece)
-                selected_is_on_team = self.get_current_allegiance() == selected_allegiance
+                selected_team = chess.piece_team(selected_piece)
+                selected_is_on_team = self.get_current_team() == selected_team
                 if self.selected_start is None:
                     if selected_is_on_team:
                         # Make a start selection
@@ -151,7 +157,7 @@ class PlayState (State):
     def update (self):
         if None not in (self.selected_start, self.selected_end):
             print('try a move...', end=' ')
-            if self.chess_board.is_legal_move(self.get_current_allegiance(), *self.selected_start, *self.selected_end):
+            if self.chess_board.is_legal_move(self.get_current_team(), *self.selected_start, *self.selected_end):
                 print('legal move')
                 self.chess_board.move(*self.selected_start, *self.selected_end)
                 self.spawn_pieces()
@@ -160,6 +166,29 @@ class PlayState (State):
                 print('illegal move')
             self.selected_start = None
             self.selected_end = None
+        else:
+            board_update = False
+            if self.do_short_castle:
+                self.do_short_castle = False
+                team = self.get_current_team()
+                if self.chess_board.king_can_castle_short(team):
+                    self.chess_board.move_castle_short(team)
+                    board_update = True
+                    print('castle short')
+                else:
+                    print('can not castle short')
+            elif self.do_long_castle:
+                self.do_long_castle = False
+                team = self.get_current_team()
+                if self.chess_board.king_can_castle_long(team):
+                    self.chess_board.move_castle_long(team)
+                    board_update = True
+                    print('castle long')
+                else:
+                    print('can not castle long')
+            if board_update:
+                self.spawn_pieces()
+                self.turn += 1
 
     def display (self, screen):
         screen.fill((120, 120, 120))
@@ -170,7 +199,7 @@ class PlayState (State):
         if self.debug_corner:
             pygame.draw.rect(screen, (0, 255, 255), (self.corner_x, self.corner_y, 10, 10))
 
-        if self.get_current_allegiance() == chess.BLACK_KING:
+        if self.get_current_team() == chess.BLACK_KING:
             pygame.draw.rect(screen, (0, 0, 0), (self.corner_x-16, self.corner_y, 10, 10))
         else:
             pygame.draw.rect(screen, (255, 255, 255), (self.corner_x-32, self.corner_y, 10, 10))
