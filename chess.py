@@ -20,17 +20,17 @@ BLACK_KING \
 = range(13)
 
 def pieces_are_enemies (p1, p2):
-    p1_allegiance = piece_allegiance(p1)
-    p2_allegiance = piece_allegiance(p2)
-    if None in (p1_allegiance, p2_allegiance):
+    p1_team = piece_team(p1)
+    p2_team = piece_team(p2)
+    if None in (p1_team, p2_team):
         return False 
     else:
-        return not (p1_allegiance == p2_allegiance)
+        return not (p1_team == p2_team)
 
-def name_allegiance (allegiance) -> str:
-    if allegiance == WHITE_KING:
+def name_team (team) -> str:
+    if team == WHITE_KING:
         return 'white'
-    elif allegiance == BLACK_KING:
+    elif team == BLACK_KING:
         return 'black'
 
 def name_role (role) -> str:
@@ -49,10 +49,10 @@ def name_role (role) -> str:
 
 def name_piece (piece) -> str:
     '''Name a piece in English'''
-    allegiance = name_allegiance(piece_allegiance(piece))
+    team = name_team(piece_team(piece))
     role = name_role(piece_role(piece))
-    if allegiance and role:
-        return ' '.join((allegiance, role))
+    if team and role:
+        return ' '.join((team, role))
 
 def piece_role (piece):
     '''Return the piece's role by converting it to the white team'''
@@ -63,7 +63,7 @@ def piece_role (piece):
     else:
         return None
 
-def piece_allegiance (piece):
+def piece_team (piece):
     '''Return white king or black king'''
     if WHITE_PAWN <= piece <= BLACK_KING:
         if WHITE_PAWN <= piece <= WHITE_KING:
@@ -73,10 +73,10 @@ def piece_allegiance (piece):
     else:
         return None
 
-def role_as_allegiance (role, allegiance):
-    if allegiance == WHITE_KING:
+def role_as_team (role, team):
+    if team == WHITE_KING:
         return role
-    elif allegiance == BLACK_KING:
+    elif team == BLACK_KING:
         return role + 6
     else:
         return None
@@ -90,6 +90,19 @@ class Board:
         self.squares = self.rows * self.columns
         self.pieces = [EMPTY for x in range(self.squares)]
         self.has_moved = [False for x in range(self.squares)]
+        
+        for col in range(self.columns):
+            self.set(1, col, BLACK_PAWN)
+            self.set(6, col, WHITE_PAWN)
+        for row, team in zip((0, 7), (BLACK_KING, WHITE_KING)):
+            self.set(row, 0, role_as_team(WHITE_ROOK, team))
+            self.set(row, 1, role_as_team(WHITE_KNIGHT, team))
+            self.set(row, 2, role_as_team(WHITE_BISHOP, team))
+            self.set(row, 3, role_as_team(WHITE_QUEEN, team))
+            self.set(row, 4, role_as_team(WHITE_KING, team))
+            self.set(row, 5, role_as_team(WHITE_BISHOP, team))
+            self.set(row, 6, role_as_team(WHITE_KNIGHT, team))
+            self.set(row, 7, role_as_team(WHITE_ROOK, team))
 
     def in_range (self, row, col):
         return row in range(0, self.rows) and col in range(self.columns)
@@ -173,7 +186,7 @@ class Board:
     def pawn_moves (self, row, col):
         moves = []
         piece = self.get(row, col)
-        forward, forward_2, diag_r, diag_l = pawn_plus_deltas(row, col, piece_allegiance(piece))
+        forward, forward_2, diag_r, diag_l = pawn_plus_deltas(row, col, piece_team(piece))
         # Moving forward 1 and 2 spaces
         if self.in_range(*forward) and self.get(*forward) == EMPTY:
             moves.append(forward)
@@ -247,34 +260,34 @@ class Board:
         return moves
 
     def white_pieces (self):
-        for x in self.allegiance_pieces(WHITE_KING):
+        for x in self.team_pieces(WHITE_KING):
             yield x
 
     def black_pieces (self):
-        for x in self.allegiance_pieces(BLACK_KING):
+        for x in self.team_pieces(BLACK_KING):
             yield x
 
-    def allegiance_pieces (self, allegiance):
-        '''Generator for all pieces that have the given allegiance.
+    def team_pieces (self, team):
+        '''Generator for all pieces that have the given team.
         YIELDS (piece index, piece id)'''
         for index, piece in enumerate(self.pieces):
-            if piece_allegiance(piece) == allegiance:
+            if piece_team(piece) == team:
                 yield self.index_to_rowcol(index), piece
 
-    def allegiance_moves (self, allegiance):
+    def team_moves (self, team):
         '''Get all moves that a team can make, including not allowing
         moves that put the King in Check'''
         all_moves = dict()
-        for (row, col), piece in self.allegiance_pieces(allegiance):
-            no_threat = lambda to_rowcol: not self.move_would_threaten_king(row, col, *to_rowcol, allegiance)
+        for (row, col), piece in self.team_pieces(team):
+            no_threat = lambda to_rowcol: not self.move_would_threaten_king(row, col, *to_rowcol, team)
             moves = filter(no_threat, self.piece_moves(row, col))
             all_moves[(row, col)] = list(moves)
         return all_moves
 
-    def move_would_threaten_king (self, from_row, from_col, to_row, to_col, allegiance):
+    def move_would_threaten_king (self, from_row, from_col, to_row, to_col, team):
         simulation_board = self.copy()
         simulation_board.move(from_row, from_col, to_row, to_col)
-        return simulation_board.king_is_in_check(allegiance)
+        return simulation_board.king_is_in_check(team)
 
     def white_moves (self):
         return self.team_moves(WHITE_KING)
@@ -304,7 +317,7 @@ class Board:
         self.set(to_row, to_col, self.get(from_row, from_col))
         self.set(from_row, from_col, EMPTY)
 
-    def is_king_moved (self, king)
+    def is_king_moved (self, king):
         if king == WHITE_KING:
             king_i = self.rowcol_to_index(7, 4)
         elif king == BLACK_KING:
@@ -359,32 +372,32 @@ class Board:
         self.move(row, king_col, row, 6)
         self.move(row, rook_col, row, 5)
 
-    def is_legal_move (self, allegiance, from_row, from_col, to_row, to_col):
+    def is_legal_move (self, team, from_row, from_col, to_row, to_col):
         # TODO: pre-calculate legal moves every time a real move is made
         # This calculates all moves available currently
-        all_moves = self.allegiance_moves(allegiance)
+        all_moves = self.team_moves(team)
         the_piece_moves = all_moves.get((from_row, from_col))
         if the_piece_moves:
             return (to_row, to_col) in the_piece_moves
         else:
             return False
 
-def pawn_deltas (allegiance):
-    # White allegiance initial values
+def pawn_deltas (team):
+    # White team initial values
     # (delta row, delta column)
     forward = [1, 0]
     forward_2 = [2, 0]
     diag_r = [1, 1]
     diag_l = [1, -1]
-    if allegiance == WHITE_KING:
+    if team == WHITE_KING:
         forward[0] *= -1
         forward_2[0] *= -1
         diag_r[0] *= -1
         diag_l[0] *= -1
     return forward, forward_2, diag_r, diag_l
 
-def pawn_plus_deltas (row, col, allegiance):
-    deltas = list(pawn_deltas(allegiance))
+def pawn_plus_deltas (row, col, team):
+    deltas = list(pawn_deltas(team))
     for i, d in enumerate(deltas):
         d[0] += row
         d[1] += col
@@ -393,18 +406,6 @@ def pawn_plus_deltas (row, col, allegiance):
 
 def standard_board ():
     board = Board()
-    for col in range(8):
-        board.set(1, col, BLACK_PAWN)
-        board.set(6, col, WHITE_PAWN)
-    for row, allegiance in zip((0, 7), (BLACK_KING, WHITE_KING)):
-        board.set(row, 0, role_as_allegiance(WHITE_ROOK, allegiance))
-        board.set(row, 1, role_as_allegiance(WHITE_KNIGHT, allegiance))
-        board.set(row, 2, role_as_allegiance(WHITE_BISHOP, allegiance))
-        board.set(row, 3, role_as_allegiance(WHITE_QUEEN, allegiance))
-        board.set(row, 4, role_as_allegiance(WHITE_KING, allegiance))
-        board.set(row, 5, role_as_allegiance(WHITE_BISHOP, allegiance))
-        board.set(row, 6, role_as_allegiance(WHITE_KNIGHT, allegiance))
-        board.set(row, 7, role_as_allegiance(WHITE_ROOK, allegiance))
     return board
 
 def square_is_white (row, col):
