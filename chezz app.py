@@ -29,15 +29,21 @@ def display_init ():
     return pygame.display.set_mode((width, height))
 
 class State:
+    debug_init = False
+
     def __init__ (self, next_state=None):
-        print('starting state', self)
+        if self.debug_init:
+            print('starting state', self)
         self.is_done = False
         self.next_state = next_state
         self.is_quit = False
+
     def note_event (self, event):
         pass
+
     def display (self, screen):
         pass
+
     def update (self):
         pass
 
@@ -53,7 +59,7 @@ class OptionState (State):
 
 class PlayState (State):
     debug_corner = False
-    debug_select = True
+    debug_select = False
 
     corner_x, corner_y = 128, 32 
     square_size = 48
@@ -69,6 +75,7 @@ class PlayState (State):
     def __init__ (self):
         State.__init__(self, next_state=MenuState)
         self.chess_board = chess.Board()
+        self.move_log = []
         self.turn = 0
         self.selected_start = None
         self.selected_end = None
@@ -155,40 +162,36 @@ class PlayState (State):
                     print(name(self.selected_start), '-->', name(self.selected_end))
 
     def update (self):
+        board_update = False
         if None not in (self.selected_start, self.selected_end):
-            print('try a move...', end=' ')
+            if self.debug_select:
+                print('try a move...', end=' ')
             if self.chess_board.is_legal_move(self.get_current_team(), *self.selected_start, *self.selected_end):
-                print('legal move')
                 self.chess_board.move(*self.selected_start, *self.selected_end)
-                self.spawn_pieces()
-                self.turn += 1
-            else:
-                print('illegal move')
+                self.move_log.append('{} --> {}'.format(chess.name_square(*self.selected_start), chess.name_square(*self.selected_end)))
+                board_update = True
             self.selected_start = None
             self.selected_end = None
         else:
-            board_update = False
             if self.do_short_castle:
                 self.do_short_castle = False
                 team = self.get_current_team()
                 if self.chess_board.king_can_castle_short(team):
                     self.chess_board.move_castle_short(team)
                     board_update = True
-                    print('castle short')
-                else:
-                    print('can not castle short')
+                    self.move_log.append('O-O')
             elif self.do_long_castle:
                 self.do_long_castle = False
                 team = self.get_current_team()
                 if self.chess_board.king_can_castle_long(team):
                     self.chess_board.move_castle_long(team)
                     board_update = True
-                    print('castle long')
-                else:
-                    print('can not castle long')
-            if board_update:
-                self.spawn_pieces()
-                self.turn += 1
+                    self.move_log.append('O-O-O')
+        if board_update:
+            self.turn += 1
+            self.spawn_pieces()
+            self.selected_start = None
+            self.selected_end = None
 
     def display (self, screen):
         screen.fill((120, 120, 120))
