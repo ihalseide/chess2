@@ -1,6 +1,7 @@
 Animate the sprite's movement for the pieces
 
 Add a menu screen
+- pieces scrolling across the screen, or spinning around?
 
 Show available moves when a piece is selected
 
