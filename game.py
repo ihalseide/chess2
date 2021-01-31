@@ -6,14 +6,18 @@ import chess
 CORNER_X, CORNER_Y = 64, 88
 GRID_SIZE = 16
 MESSAGE_X, MESSAGE_Y = 48, 72 
+JAIL_START_X = 25 * 8
+JAIL_END_X = 25 * 8 + 16 * 3
+BLACK_JAIL_Y = 224
+WHITE_JAIL_Y = 72
 WIN_TEXT = [
-        "You can now play as Luigi",
-        "Free Play unlocked"
+        "you can now play as luigi",
+        "free play unlocked"
         ]
 LOSE_TEXT = [
-        "All your base are belong to us",
-        "Sorry, mate",
-        "Screams echo around you"
+        "all your base are belong to us",
+        "sorry mate",
+        "screams echo around you"
         ]
 BACKGROUND = [
 326,326,326,326,326,326,306,286,284,286,285,326,266,283,258,268,326,265,258,269,276,262,266,261,262,326,326,326,326,326,326,326,
@@ -78,25 +82,25 @@ class Game:
         is_white = self.chess_board.get_current_team() == chess.WHITE_KING
         if self.is_promoting:
             if is_white:
-                self.message = '#white pawn promotion'
+                self.message = 'white # pawn promotion'
             else:
-                self.message = '$black pawn promotion'
+                self.message = 'black $ pawn promotion'
         elif self.game_over:
             if is_white:
-                self.message = '$black won the game!'
+                self.message = 'black $ won the game!'
             else:
-                self.message = '#white won the game!'
+                self.message = 'white # won the game!'
         else:
             if is_white:
                 if self.chess_board.king_is_in_check(chess.WHITE_KING):
-                    self.message = '#white is in check'
+                    self.message = 'white # is in check'
                 else:
-                    self.message = '#white to move'
+                    self.message = 'white # to move'
             else:
                 if self.chess_board.king_is_in_check(chess.BLACK_KING):
-                    self.message = '$black is in check'
+                    self.message = 'black $ is in check'
                 else:
-                    self.message = '$black to move'
+                    self.message = 'black $ to move'
         self.message_sprites = []
         for i, char in enumerate(self.message):
             tile = char_to_tile(char)
@@ -117,9 +121,8 @@ class Game:
                 }
 
     def play_sound (self, name):
-        sound = self.sounds.get(name)
-        if sound:
-            sound.play()
+        sound = self.sounds[name]
+        sound.play()
 
     def init_chess (self):
         self.chess_board = chess.Board()
@@ -135,6 +138,8 @@ class Game:
         self.move_is_short_castle = False
         self.move_is_long_castle = False
         self.is_promoting = False
+        self.black_jail_x, self.black_jail_y = JAIL_START_X, BLACK_JAIL_Y
+        self.white_jail_x, self.white_jail_y = JAIL_START_X, WHITE_JAIL_Y
         for row in range(8):
             for col in range(8):
                 piece = self.chess_board.get(row, col)
@@ -198,10 +203,22 @@ class Game:
         piece.y = y
 
     def remove_piece (self, piece):
-        piece.x = 256
-        piece.y = 240
         piece.row = None
         piece.col = None
+        if chess.piece_team(piece.piece) == chess.WHITE_KING:
+            piece.x = self.white_jail_x
+            piece.y = self.white_jail_y
+            self.white_jail_x += 16
+            if self.white_jail_x >= JAIL_END_X:
+                self.white_jail_x = JAIL_START_X
+                self.white_jail_y += 16
+        else:
+            piece.x = self.black_jail_x
+            piece.y = self.black_jail_y
+            self.black_jail_x += 16
+            if self.black_jail_x >= JAIL_END_X:
+                self.black_jail_x = JAIL_START_X
+                self.black_jail_y -= 16
 
     def update (self):
         self.clock.tick(30) # 30 FPS
@@ -214,16 +231,19 @@ class Game:
             if self.selected_piece is not None:
                 piece = self.selected_piece.piece
                 new_role = chess.piece_role(piece)
-                self.chess_board.promote(team, *self.move_end, new_role)
-                promote_piece = self.get_piece_at(*self.move_end)
-                promote_piece.piece = piece
-                promote_piece.tile = get_piece_tile(piece)
-                self.is_promoting = False
-                # Finish the rest of the post-move logic
-                self.move_start = None
-                self.move_end = None
-                self.chess_board.turn += 1
-                self.play_sound('promote')
+                piece = chess.role_as_team(new_role, team)
+                if self.chess_board.can_promote(team, *self.move_end, new_role):
+                    self.chess_board.promote(team, *self.move_end, new_role)
+                    promote_piece = self.get_piece_at(*self.move_end)
+                    promote_piece.piece = piece
+                    promote_piece.tile = get_piece_tile(piece)
+                    self.is_promoting = False
+                    # Finish the rest of the post-move logic
+                    self.move_start = None
+                    self.move_end = None
+                    self.chess_board.turn += 1
+                    self.play_sound('promote')
+                self.selected_piece = None
         elif self.move_start is not None and self.move_end is not None:
             if self.move_is_long_castle or self.move_is_short_castle:
                 king = self.get_piece_at(*self.move_start)
@@ -250,7 +270,7 @@ class Game:
                     self.remove_piece(target)
                     is_capture = True
                 self.chess_board.move(*self.move_start, *self.move_end)
-                if self.chess_board.can_promote(team, *self.move_end):
+                if self.chess_board.is_promotable(team, *self.move_end):
                     self.is_promoting = True
                     self.play_sound('can promote')
                 else:
@@ -283,6 +303,10 @@ class Game:
                         self.move_end = self.selected_end
                         self.selected_start = None
                         self.selected_end = None
+            else:
+                self.selected_start = None
+                self.selected_end = None
+                self.play_sound('error')
         self.update_message()
 
     def play_resulting_sound (self, is_capture):

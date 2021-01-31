@@ -336,16 +336,19 @@ class Board:
         self.set(to_row, to_col, self.get(from_row, from_col))
         self.set(from_row, from_col, EMPTY)
 
-    def can_promote (self, team, row, column):
+    def is_promotable (self, team, row, column):
         if team == WHITE_KING:
             return (row == 0) and (self.get(row, column) == WHITE_PAWN)
         elif team == BLACK_KING:
             return (row == (self.rows - 1)) and (self.get(row, column) == BLACK_PAWN)
 
+    def can_promote (self, team, row, column, to_role):
+        valid_role = to_role in (WHITE_QUEEN, WHITE_BISHOP, WHITE_ROOK, WHITE_KNIGHT)
+        return self.is_promotable(team, row, column) and valid_role
+
     def promote (self, team, row, column, to_role):
         # For when you want to promote a pawn
-        if self.can_promote(team, row, column):
-            self.set(row, column, role_as_team(to_role, team))
+        self.set(row, column, role_as_team(to_role, team))
 
     def is_king_moved (self, king):
         if king == WHITE_KING:
