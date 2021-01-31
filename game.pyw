@@ -53,7 +53,7 @@ MENU_BACKGROUND = [
         ]
 GAME_BACKGROUND = [
         308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,
-        308,259,269,278,262,256,308,277,266,270,262,308,308,308,301,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,
+        308,259,269,258,260,268,256,308,277,266,270,262,308,308,308,301,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,
         308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,
         308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,
         308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,
@@ -80,7 +80,7 @@ GAME_BACKGROUND = [
         308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,
         308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,
         308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,
-        308,275,262,261,257,308,277,266,270,262,308,308,308,308,301,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,
+        308,280,265,266,277,262,257,308,277,266,270,262,308,308,308,301,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,
         308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308
         ]
 
@@ -116,25 +116,27 @@ class Game:
         is_white = self.chess_board.get_current_team() == chess.WHITE_KING
         if self.is_promoting:
             if is_white:
-                self.message = 'red# pawn promotion'
+                self.message = 'white# pawn promotion'
             else:
-                self.message = 'blue$ pawn promotion'
+                self.message = 'black$ pawn promotion'
         elif self.game_over:
             if is_white:
-                self.message = 'blue$ won the game!'
+                self.message = 'black$ won the game!'
             else:
-                self.message = 'red# won the game!'
+                self.message = 'white# won the game!'
         else:
             if is_white:
                 if self.chess_board.king_is_in_check(chess.WHITE_KING):
-                    self.message = 'red# is in check'
+                    self.message = 'white# is in check'
+                elif self.is_first_move:
+                    self.message = 'white# to make 1st move'
                 else:
-                    self.message = 'red# to move'
+                    self.message = 'white# to move'
             else:
                 if self.chess_board.king_is_in_check(chess.BLACK_KING):
-                    self.message = 'blue$ is in check'
+                    self.message = 'black$ is in check'
                 else:
-                    self.message = 'blue$ to move'
+                    self.message = 'black$ to move'
         self.message_sprites = []
         for i, char in enumerate(self.message):
             tile = char_to_tile(char)
@@ -419,10 +421,10 @@ class Game:
             draw_tile(self.screen, self.spritesheet, tile, x, y)
 
     def display_timers (self):
-        self.display_number(self.black_minutes, 96, 8)
-        self.display_number(self.black_seconds, 120, 8)
-        self.display_number(self.white_minutes, 96, 224)
-        self.display_number(self.white_seconds, 120, 224)
+        self.display_number(self.black_minutes, 104, 8)
+        self.display_number(self.black_seconds, 128, 8)
+        self.display_number(self.white_minutes, 104, 224)
+        self.display_number(self.white_seconds, 128, 224)
 
     def display_game (self):
         self.display_background()
