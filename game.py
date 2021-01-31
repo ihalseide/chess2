@@ -99,13 +99,15 @@ class Game:
             self.message_sprites.append(s)
 
     def init_sounds (self):
+        s = pygame.mixer.Sound
         self.sounds = {
-                'check': pygame.mixer.Sound('check.wav'),
-                'checkmate': pygame.mixer.Sound('checkmate.wav'),
-                'error': pygame.mixer.Sound('error.wav'),
-                'move': pygame.mixer.Sound('move.wav'),
-                'promotion': pygame.mixer.Sound('promote.wav'),
-                'capture': pygame.mixer.Sound('capture.wav')
+                'check': s('check.wav'),
+                'checkmate': s('checkmate.wav'),
+                'error': s('error.wav'),
+                'move': s('move.wav'),
+                'promotion': s('promote.wav'),
+                'capture': s('capture.wav'),
+                'castle': s('castle.wav')
                 }
 
     def play_sound (self, name):
@@ -123,6 +125,8 @@ class Game:
         self.moving_piece = None
         self.move_start = None
         self.move_end = None
+        self.move_is_short_castle = False
+        self.move_is_long_castle = False
         for row in range(8):
             for col in range(8):
                 piece = self.chess_board.get(row, col)
@@ -185,33 +189,64 @@ class Game:
         self.clock.tick(30) # 30 FPS
         if self.game_over:
             return
-        if winner := self.chess_board.get_winner():
-            if winner == chess.BLACK_KING:
-                print('Black wins!')
-            else:
-                print('White wins!')
+        team = self.chess_board.get_current_team()
+        if self.chess_board.get_winner():
             self.game_over = True
         elif self.move_start is not None and self.move_end is not None:
-            piece = self.get_piece_at(*self.move_start)
-            target = self.get_piece_at(*self.move_end)
-            self.move_piece_grid(piece, *self.move_end)
-            is_capture = False
-            if target is not None:
-                self.remove_piece(target)
-                is_capture = True
-            self.chess_board.move(*self.move_start, *self.move_end)
-            self.move_start = None
-            self.move_end = None
-            self.chess_board.turn += 1
-            self.play_resulting_sound(is_capture)
+            if self.move_is_long_castle or self.move_is_short_castle:
+                king = self.get_piece_at(*self.move_start)
+                self.move_piece_grid(king, *self.move_end)
+                if self.move_is_long_castle:
+                    castle = self.get_piece_at(self.move_start[0], 0)
+                    self.move_piece_grid(castle, self.move_end[0], self.move_end[1] + 1)
+                    self.chess_board.move_castle_long(team)
+                else:
+                    castle = self.get_piece_at(self.move_start[0], 7)
+                    self.move_piece_grid(castle, self.move_end[0], self.move_end[1] - 1)
+                    self.chess_board.move_castle_short(team)
+                self.chess_board.turn += 1
+                self.play_sound('castle')
+                self.move_start = None
+                self.move_end = None
+                self.move_is_long_castle = self.move_is_short_castle = False
+            else:
+                piece = self.get_piece_at(*self.move_start)
+                target = self.get_piece_at(*self.move_end)
+                self.move_piece_grid(piece, *self.move_end)
+                is_capture = False
+                if target is not None:
+                    self.remove_piece(target)
+                    is_capture = True
+                self.chess_board.move(*self.move_start, *self.move_end)
+                self.move_start = None
+                self.move_end = None
+                self.chess_board.turn += 1
+                self.play_resulting_sound(is_capture)
         elif self.selected_start is not None and self.selected_end is not None:
-            team = self.chess_board.get_current_team()
             piece = self.chess_board.get(*self.selected_start)
             if self.chess_board.is_legal_move(team, *self.selected_start, *self.selected_end):
                 self.move_start = self.selected_start
                 self.move_end = self.selected_end
                 self.selected_start = None
                 self.selected_end = None
+            elif self.chess_board.king_can_castle_long(team):
+                king_row, king_col = self.chess_board.find_piece(team)
+                if self.selected_start == (king_row, king_col):
+                    if self.selected_end == (king_row, king_col - 2):
+                        self.move_is_long_castle = True
+                        self.move_start = self.selected_start
+                        self.move_end = self.selected_end
+                        self.selected_start = None
+                        self.selected_end = None
+            elif self.chess_board.king_can_castle_short(team):
+                king_row, king_col = self.chess_board.find_piece(team)
+                if self.selected_start == (king_row, king_col):
+                    if self.selected_end == (king_row, king_col + 2):
+                        self.move_is_short_castle = True
+                        self.move_start = self.selected_start
+                        self.move_end = self.selected_end
+                        self.selected_start = None
+                        self.selected_end = None
         self.update_message()
 
     def play_resulting_sound (self, is_capture):
