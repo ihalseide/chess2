@@ -176,6 +176,8 @@ class Game:
                         if selected_is_team:
                             # Make a start selection
                             self.selected_start = rowcol
+                        else:
+                            self.play_sound('error')
                     else:
                         if selected_is_team:
                             # Override start selection
