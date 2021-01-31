@@ -1,7 +1,5 @@
 # This file contains the main code and logic behind the game of Chess
 
-import string
-
 # Use this formatting to avoid typing mistakes, since it is important that
 # these numeric constants are correct
 EMPTY, \
@@ -82,27 +80,48 @@ def role_as_team (role, team):
         return None
 
 class Board:
-    '''A Chess game board, with pieces on it'''
+    standard = [
+            BLACK_ROOK, BLACK_KNIGHT, BLACK_BISHOP, BLACK_QUEEN, BLACK_KING, BLACK_BISHOP, BLACK_KNIGHT, BLACK_ROOK,
+            BLACK_PAWN, BLACK_PAWN, BLACK_PAWN, BLACK_PAWN, BLACK_PAWN, BLACK_PAWN, BLACK_PAWN, BLACK_PAWN,
+            EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY,
+            EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY,
+            EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY,
+            EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY,
+            WHITE_PAWN, WHITE_PAWN, WHITE_PAWN, WHITE_PAWN, WHITE_PAWN, WHITE_PAWN, WHITE_PAWN, WHITE_PAWN,
+            WHITE_ROOK, WHITE_KNIGHT, WHITE_BISHOP, WHITE_QUEEN, WHITE_KING, WHITE_BISHOP, WHITE_KNIGHT, WHITE_ROOK,
+            ]
 
-    def __init__ (self):
-        self.rows = 8
-        self.columns = 8
+    def __init__ (self, pieces=None, has_moved=None, rows=8, columns=8, turn=0):
+        self.rows = rows
+        self.columns = columns
         self.squares = self.rows * self.columns
-        self.pieces = [EMPTY for x in range(self.squares)]
-        self.has_moved = [False for x in range(self.squares)]
-        
-        for col in range(self.columns):
-            self.set(1, col, BLACK_PAWN)
-            self.set(6, col, WHITE_PAWN)
-        for row, team in zip((0, 7), (BLACK_KING, WHITE_KING)):
-            self.set(row, 0, role_as_team(WHITE_ROOK, team))
-            self.set(row, 1, role_as_team(WHITE_KNIGHT, team))
-            self.set(row, 2, role_as_team(WHITE_BISHOP, team))
-            self.set(row, 3, role_as_team(WHITE_QUEEN, team))
-            self.set(row, 4, role_as_team(WHITE_KING, team))
-            self.set(row, 5, role_as_team(WHITE_BISHOP, team))
-            self.set(row, 6, role_as_team(WHITE_KNIGHT, team))
-            self.set(row, 7, role_as_team(WHITE_ROOK, team))
+        self.pieces = pieces or [x for x in self.standard]
+        self.has_moved = has_moved or [False for x in range(self.squares)]
+        self.turn = turn
+
+    def get_winner (self):
+        white_can_move = False
+        black_can_move = False
+        for piece, moves in self.team_moves(WHITE_KING).items():
+            if len(moves):
+                white_can_move = True
+                break
+        for piece, moves in self.team_moves(BLACK_KING).items():
+            if len(moves):
+                black_can_move = True
+                break
+        if not white_can_move:
+            return BLACK_KING
+        elif not black_can_move:
+            return WHITE_KING
+        else:
+            return None
+
+    def get_current_team (self):
+        if self.turn % 2 == 0:
+            return WHITE_KING
+        else:
+            return BLACK_KING
 
     def in_range (self, row, col):
         return row in range(0, self.rows) and col in range(self.columns)
@@ -409,10 +428,12 @@ def standard_board ():
     return board
 
 def square_is_white (row, col):
+    row %= 2
+    col %= 2
     return (row and col) or not (row or col) 
 
 def name_square (row, col):
     max_rows = 8
-    letter = string.ascii_uppercase[col]
+    letter = 'ABCDEFGH'[col]
     return letter + str(max_rows - row)
 
