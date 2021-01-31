@@ -76,7 +76,12 @@ class Game:
     
     def update_message (self):
         is_white = self.chess_board.get_current_team() == chess.WHITE_KING
-        if self.game_over:
+        if self.is_promoting:
+            if is_white:
+                self.message = '#white pawn promotion'
+            else:
+                self.message = '$black pawn promotion'
+        elif self.game_over:
             if is_white:
                 self.message = '$black won the game!'
             else:
@@ -105,7 +110,8 @@ class Game:
                 'checkmate': s('checkmate.wav'),
                 'error': s('error.wav'),
                 'move': s('move.wav'),
-                'promotion': s('promote.wav'),
+                'promote': s('promote.wav'),
+                'can promote': s('can promote.wav'),
                 'capture': s('capture.wav'),
                 'castle': s('castle.wav')
                 }
@@ -123,10 +129,12 @@ class Game:
     def init_pieces (self):
         self.pieces = []
         self.moving_piece = None
+        self.selected_piece = None
         self.move_start = None
         self.move_end = None
         self.move_is_short_castle = False
         self.move_is_long_castle = False
+        self.is_promoting = False
         for row in range(8):
             for col in range(8):
                 piece = self.chess_board.get(row, col)
@@ -137,6 +145,7 @@ class Game:
                 new = Sprite(tile, x, y, 2)
                 new.row = row
                 new.col = col
+                new.piece = piece
                 self.pieces.append(new)
 
     def note_event (self, event):
@@ -150,24 +159,31 @@ class Game:
         elif event.type == pygame.MOUSEBUTTONDOWN:
             x = event.pos[0] // 2
             y = event.pos[1] // 2
-            rowcol = screen_to_board(x, y)
-            if rowcol:
-                selected_piece = self.chess_board.get(*rowcol)
-                selected_team = chess.piece_team(selected_piece)
-                current_team = self.chess_board.get_current_team()
-                selected_is_team = current_team == selected_team
-                if self.selected_start is None:
-                    if selected_is_team:
-                        # Make a start selection
-                        self.selected_start = rowcol
-                else:
-                    if selected_is_team:
-                        # Override start selection
-                        self.selected_start = rowcol
-                        self.selected_end = None
+            if self.is_promoting:
+                self.selected_piece = None
+                for piece in self.pieces:
+                    rect = pygame.Rect(piece.x, piece.y, piece.size * 8, piece.size * 8)
+                    if rect.collidepoint((x, y)):
+                        self.selected_piece = piece
+            else:
+                rowcol = screen_to_board(x, y)
+                if rowcol:
+                    selected_piece = self.chess_board.get(*rowcol)
+                    selected_team = chess.piece_team(selected_piece)
+                    current_team = self.chess_board.get_current_team()
+                    selected_is_team = current_team == selected_team
+                    if self.selected_start is None:
+                        if selected_is_team:
+                            # Make a start selection
+                            self.selected_start = rowcol
                     else:
-                        # Make an end selection
-                        self.selected_end = rowcol
+                        if selected_is_team:
+                            # Override start selection
+                            self.selected_start = rowcol
+                            self.selected_end = None
+                        else:
+                            # Make an end selection
+                            self.selected_end = rowcol
 
     def move_piece_grid (self, piece, row, col):
         piece.row = row
@@ -187,11 +203,25 @@ class Game:
 
     def update (self):
         self.clock.tick(30) # 30 FPS
+        team = self.chess_board.get_current_team()
         if self.game_over:
             return
-        team = self.chess_board.get_current_team()
-        if self.chess_board.get_winner():
+        elif self.chess_board.get_winner():
             self.game_over = True
+        elif self.is_promoting:
+            if self.selected_piece is not None:
+                piece = self.selected_piece.piece
+                new_role = chess.piece_role(piece)
+                self.chess_board.promote(team, *self.move_end, new_role)
+                promote_piece = self.get_piece_at(*self.move_end)
+                promote_piece.piece = piece
+                promote_piece.tile = get_piece_tile(piece)
+                self.is_promoting = False
+                # Finish the rest of the post-move logic
+                self.move_start = None
+                self.move_end = None
+                self.chess_board.turn += 1
+                self.play_sound('promote')
         elif self.move_start is not None and self.move_end is not None:
             if self.move_is_long_castle or self.move_is_short_castle:
                 king = self.get_piece_at(*self.move_start)
@@ -218,10 +248,14 @@ class Game:
                     self.remove_piece(target)
                     is_capture = True
                 self.chess_board.move(*self.move_start, *self.move_end)
-                self.move_start = None
-                self.move_end = None
-                self.chess_board.turn += 1
-                self.play_resulting_sound(is_capture)
+                if self.chess_board.can_promote(team, *self.move_end):
+                    self.is_promoting = True
+                    self.play_sound('can promote')
+                else:
+                    self.move_start = None
+                    self.move_end = None
+                    self.chess_board.turn += 1
+                    self.play_resulting_sound(is_capture)
         elif self.selected_start is not None and self.selected_end is not None:
             piece = self.chess_board.get(*self.selected_start)
             if self.chess_board.is_legal_move(team, *self.selected_start, *self.selected_end):
