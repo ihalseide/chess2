@@ -373,7 +373,8 @@ class Board:
         king_moved = self.is_king_moved(king)
         rook_moved = self.has_moved[rook_i]
         is_clear = (empty1 == EMPTY) and (empty2 == EMPTY)
-        return is_clear and (not king_moved) and (not rook_moved)
+        in_check = self.king_is_in_check(king)
+        return (not in_check) and is_clear and (not king_moved) and (not rook_moved)
 
     def move_castle_long (self, king):
         assert king in (WHITE_KING, BLACK_KING)
@@ -396,7 +397,8 @@ class Board:
         king_moved = self.is_king_moved(king)
         rook_moved = self.has_moved[rook_i]
         is_clear = (empty1 == EMPTY) and (empty2 == EMPTY)
-        return is_clear and (not king_moved) and (not rook_moved)
+        in_check = self.king_is_in_check(king)
+        return (not in_check) and is_clear and (not king_moved) and (not rook_moved)
 
     def move_castle_short (self, king):
         assert king in (WHITE_KING, BLACK_KING)
