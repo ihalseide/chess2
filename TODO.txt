@@ -1,0 +1,9 @@
+Animate the sprite's movement for the pieces
+
+Add a menu screen
+
+Show available moves when a piece is selected
+
+Add the easter eggs
+
+Add an AI for 0 and 1 player mode
