@@ -82,25 +82,25 @@ class Game:
         is_white = self.chess_board.get_current_team() == chess.WHITE_KING
         if self.is_promoting:
             if is_white:
-                self.message = 'white # pawn promotion'
+                self.message = 'red # pawn promotion'
             else:
-                self.message = 'black $ pawn promotion'
+                self.message = 'blue $ pawn promotion'
         elif self.game_over:
             if is_white:
-                self.message = 'black $ won the game!'
+                self.message = 'blue $ won the game!'
             else:
-                self.message = 'white # won the game!'
+                self.message = 'red # won the game!'
         else:
             if is_white:
                 if self.chess_board.king_is_in_check(chess.WHITE_KING):
-                    self.message = 'white # is in check'
+                    self.message = 'red # is in check'
                 else:
-                    self.message = 'white # to move'
+                    self.message = 'red # to move'
             else:
                 if self.chess_board.king_is_in_check(chess.BLACK_KING):
-                    self.message = 'black $ is in check'
+                    self.message = 'blue $ is in check'
                 else:
-                    self.message = 'black $ to move'
+                    self.message = 'blue $ to move'
         self.message_sprites = []
         for i, char in enumerate(self.message):
             tile = char_to_tile(char)
