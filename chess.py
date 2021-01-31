@@ -1,7 +1,7 @@
 # This file contains the main code and logic behind the game of Chess
 
-# Use this formatting to avoid typing mistakes, since it is important that
-# these numeric constants are correct
+# I use these line breaks to avoid some mistakes, since it is important that these constant numbers are correct
+# The kings are also used to represent the teams as a whole
 EMPTY, \
 WHITE_PAWN, \
 WHITE_BISHOP, \
@@ -20,7 +20,7 @@ BLACK_KING \
 def pieces_are_enemies (p1, p2):
     p1_team = piece_team(p1)
     p2_team = piece_team(p2)
-    if None in (p1_team, p2_team):
+    if p1_team is None or p2_team is None:
         return False 
     else:
         return not (p1_team == p2_team)
@@ -50,7 +50,7 @@ def name_piece (piece) -> str:
     team = name_team(piece_team(piece))
     role = name_role(piece_role(piece))
     if team and role:
-        return ' '.join((team, role))
+        return team+' '+role
 
 def piece_role (piece):
     '''Return the piece's role by converting it to the white team'''

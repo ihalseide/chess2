@@ -120,10 +120,11 @@ class Game:
             else:
                 self.message = 'black$ pawn promotion'
         elif self.game_over:
-            if is_white:
-                self.message = 'black$ won the game!'
-            else:
-                self.message = 'white# won the game!'
+            winner = self.chess_board.get_winner()
+            if winner == chess.WHITE_KING:
+                self.message = 'white# checkmates black$!'
+            elif winner == chess.BLACK_KING:
+                self.message = 'black$ checkmates white#!'
         else:
             if is_white:
                 if self.chess_board.king_is_in_check(chess.WHITE_KING):
@@ -183,6 +184,7 @@ class Game:
         self.move_is_short_castle = False
         self.move_is_long_castle = False
         self.is_promoting = False
+        self.is_capture = False
         self.black_jail_x, self.black_jail_y = JAIL_START_X, BLACK_JAIL_Y
         self.white_jail_x, self.white_jail_y = JAIL_START_X, WHITE_JAIL_Y
         for row in range(8):
@@ -295,12 +297,20 @@ class Game:
                     self.white_seconds = 0
                     self.white_minutes += 1
 
+    def reset (self):
+        self.__init__(self.screen)
+
     def update_game (self):
         if self.game_over:
-            return 
+            winner = self.chess_board.get_winner()
+            defeated_king = chess.WHITE_KING if (winner == chess.BLACK_KING) else chess.BLACK_KING
+            if self.selected_start:
+                if self.chess_board.get(*self.selected_start) == defeated_king:
+                    self.reset()
+            return
         self.update_timers()
         team = self.chess_board.get_current_team()
-        if self.chess_board.get_winner():
+        if (self.moving_piece is None) and self.chess_board.get_winner():
             self.game_over = True
         elif self.is_promoting:
             if self.selected_piece is not None:
@@ -319,6 +329,23 @@ class Game:
                     self.chess_board.turn += 1
                     self.play_sound('promote')
                 self.selected_piece = None
+        elif self.moving_piece is not None:
+            self.moving_steps -= 1
+            if self.moving_steps <= 0:
+                self.move_piece_grid(self.moving_piece, *self.move_end)
+                self.moving_piece = None
+                self.move_start = self.move_end = None
+                self.move_start = None
+                self.move_end = None
+                self.chess_board.turn += 1
+                self.is_first_move = False
+                self.play_resulting_sound()
+                if self.target is not None:
+                    self.remove_piece(self.target)
+                    is_capture = True
+            else:
+                self.moving_piece.x += self.moving_dx
+                self.moving_piece.y += self.moving_dy
         elif self.move_start is not None and self.move_end is not None:
             if self.move_is_long_castle or self.move_is_short_castle:
                 king = self.get_piece_at(*self.move_start)
@@ -339,22 +366,16 @@ class Game:
                 self.move_is_long_castle = self.move_is_short_castle = False
             else:
                 piece = self.get_piece_at(*self.move_start)
-                target = self.get_piece_at(*self.move_end)
-                self.move_piece_grid(piece, *self.move_end)
-                is_capture = False
-                if target is not None:
-                    self.remove_piece(target)
-                    is_capture = True
+                self.target = self.get_piece_at(*self.move_end)
+                self.moving_piece = piece
+                self.moving_dx = 2 * (self.move_end[1] - self.move_start[1])
+                self.moving_dy = 2 * (self.move_end[0] - self.move_start[0])
+                self.moving_steps = 8
+                self.is_capture = False
                 self.chess_board.move(*self.move_start, *self.move_end)
                 if self.chess_board.is_promotable(team, *self.move_end):
                     self.is_promoting = True
                     self.play_sound('can promote')
-                else:
-                    self.move_start = None
-                    self.move_end = None
-                    self.chess_board.turn += 1
-                    self.is_first_move = False
-                    self.play_resulting_sound(is_capture)
         elif self.selected_start is not None and self.selected_end is not None:
             piece = self.chess_board.get(*self.selected_start)
             if self.chess_board.is_legal_move(team, *self.selected_start, *self.selected_end):
@@ -386,7 +407,7 @@ class Game:
                 self.play_sound('error')
         self.update_message()
 
-    def play_resulting_sound (self, is_capture):
+    def play_resulting_sound (self):
         sound = None
         if self.chess_board.king_is_in_check(self.chess_board.get_current_team()):
             if self.chess_board.get_winner():
@@ -394,7 +415,7 @@ class Game:
             else:
                 sound = 'check'
         else:
-            if is_capture:
+            if self.is_capture:
                 sound = 'capture'
             else:
                 sound = 'move'
