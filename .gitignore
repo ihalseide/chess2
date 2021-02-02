@@ -1,4 +1,8 @@
+# VIM editor
 *.swp
 
+# Python cache files
 __pycache__/
 *.pyc
+
+*.csv
