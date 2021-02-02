@@ -17,6 +17,12 @@ BLACK_QUEEN, \
 BLACK_KING \
 = range(13)
 
+def get_current_team (turn_number):
+    if turn_number % 2 == 0:
+        return WHITE_KING
+    else:
+        return BLACK_KING
+
 def pieces_are_enemies (p1, p2):
     p1_team = piece_team(p1)
     p2_team = piece_team(p2)
@@ -117,12 +123,6 @@ class Board:
         else:
             return None
 
-    def get_current_team (self):
-        if self.turn % 2 == 0:
-            return WHITE_KING
-        else:
-            return BLACK_KING
-
     def in_range (self, row, col):
         return row in range(0, self.rows) and col in range(self.columns)
 
@@ -160,24 +160,25 @@ class Board:
             new.pieces[index] = piece
         return new
 
-    def piece_is_threatened (self, row, col):
-        threats = self.piece_threat_list(row, col)
+    def piece_is_threatened (self, row, col, empty_team=None):
+        threats = self.piece_threat_list(row, col, empty_team)
         return len(threats) > 0
 
-    def piece_threat_list (self, row, col):
+    def piece_threat_list (self, row, col, empty_team=None):
         '''Return a list of enemy pieces that threaten the given piece'''
         piece = self.get(row, col)
         result = []
         for i in range(self.squares):
             other_row, other_col = self.index_to_rowcol(i)
-            if self.piece_is_threatened_by(row, col, other_row, other_col):
+            if self.piece_is_threatened_by(row, col, other_row, other_col, empty_team):
                 result.append((other_row, other_col))
         return result
 
-    def piece_is_threatened_by (self, row, col, by_row, by_col):
+    def piece_is_threatened_by (self, row, col, by_row, by_col, empty_team=None):
         piece = self.get(row, col)
         other = self.get(by_row, by_col)
-        if pieces_are_enemies(piece, other):
+        team_empty_threat = (empty_team is not None) and (other != EMPTY) and piece_team(other) != empty_team
+        if pieces_are_enemies(piece, other) or team_empty_threat:
             return (row, col) in self.piece_moves(by_row, by_col)
         else:
             return False
@@ -336,15 +337,24 @@ class Board:
         self.set(to_row, to_col, self.get(from_row, from_col))
         self.set(from_row, from_col, EMPTY)
 
-    def is_promotable (self, team, row, column):
-        if team == WHITE_KING:
-            return (row == 0) and (self.get(row, column) == WHITE_PAWN)
-        elif team == BLACK_KING:
-            return (row == (self.rows - 1)) and (self.get(row, column) == BLACK_PAWN)
+    def is_promotable (self, row, column):
+        piece = self.get(row, column) 
+        if piece != EMPTY:
+            team = piece_team(piece)
+            role = piece_role(piece)
+            if role == WHITE_PAWN:
+                if team == WHITE_KING:
+                    return row == 0
+                elif team == BLACK_KING:
+                    return row == 7
+            else:
+                return False
+        else:
+            return False
 
-    def can_promote (self, team, row, column, to_role):
+    def can_promote (self, row, column, to_role):
         valid_role = to_role in (WHITE_QUEEN, WHITE_BISHOP, WHITE_ROOK, WHITE_KNIGHT)
-        return self.is_promotable(team, row, column) and valid_role
+        return self.is_promotable(row, column) and valid_role
 
     def promote (self, team, row, column, to_role):
         # For when you want to promote a pawn
@@ -359,48 +369,56 @@ class Board:
             raise ValueError(str(king))
         return self.has_moved[king_i]
 
-    def king_can_castle_long (self, king):
+    def can_queenside_castle (self, king):
+        assert king in (BLACK_KING, WHITE_KING)
         if king == WHITE_KING:
             rook_i = self.rowcol_to_index(7, 0)
-            empty1 = self.get(7, 1)
-            empty2 = self.get(7, 2)
+            empty1_i = (7, 1)
+            empty2_i = (7, 2)
+            empty3_i = (7, 3)
         elif king == BLACK_KING:
             rook_i = self.rowcol_to_index(0, 0)
-            empty1 = self.get(0, 1)
-            empty2 = self.get(0, 2)
-        else:
-            raise ValueError('not a king: %s' % str(king))
+            empty1_i = (0, 1)
+            empty2_i = (0, 2)
+            empty3_i = (0, 3)
+        empty1 = self.get(*empty1_i)
+        empty2 = self.get(*empty2_i)
+        empty3 = self.get(*empty3_i)
         king_moved = self.is_king_moved(king)
         rook_moved = self.has_moved[rook_i]
-        is_clear = (empty1 == EMPTY) and (empty2 == EMPTY)
+        is_clear = (empty1 == EMPTY) and (empty2 == EMPTY) and (empty3 == EMPTY)
         in_check = self.king_is_in_check(king)
-        return (not in_check) and is_clear and (not king_moved) and (not rook_moved)
+        will_check = self.piece_is_threatened(*empty3_i, empty_team=king) or self.piece_is_threatened(*empty2_i, empty_team=king)
+        return (not in_check) and (not will_check) and is_clear and (not king_moved) and (not rook_moved)
 
-    def move_castle_long (self, king):
+    def move_queenside_castle (self, king):
         assert king in (WHITE_KING, BLACK_KING)
         row, king_col = self.find_piece(king)
         rook_col = 0
         self.move(row, king_col, row, 2)
         self.move(row, rook_col, row, 3)
 
-    def king_can_castle_short (self, king):
+    def can_kingside_castle (self, king):
+        assert king in (WHITE_KING, BLACK_KING) 
         if king == WHITE_KING:
             rook_i = self.rowcol_to_index(7, 7)
-            empty1 = self.get(7, 6)
-            empty2 = self.get(7, 5)
+            empty1_i = (7, 6)
+            empty2_i = (7, 5)
         elif king == BLACK_KING:
             rook_i = self.rowcol_to_index(0, 7)
-            empty1 = self.get(0, 6)
-            empty2 = self.get(0, 5)
-        else:
-            raise ValueError('not a king: %s' % str(king))
+            empty1_i = (0, 6)
+            empty2_i = (0, 5)
+
+        empty1 = self.get(*empty1_i)
+        empty2 = self.get(*empty2_i)
         king_moved = self.is_king_moved(king)
         rook_moved = self.has_moved[rook_i]
         is_clear = (empty1 == EMPTY) and (empty2 == EMPTY)
         in_check = self.king_is_in_check(king)
-        return (not in_check) and is_clear and (not king_moved) and (not rook_moved)
+        will_check = self.piece_is_threatened(*empty1_i, empty_team=king) or self.piece_is_threatened(*empty2_i, empty_team=king)
+        return (not in_check) and (not will_check) and is_clear and (not king_moved) and (not rook_moved)
 
-    def move_castle_short (self, king):
+    def move_kingside_castle (self, king):
         assert king in (WHITE_KING, BLACK_KING)
         row, king_col = self.find_piece(king)
         rook_col = 7
@@ -416,6 +434,9 @@ class Board:
             return (to_row, to_col) in the_piece_moves
         else:
             return False
+
+def is_promotable_role (role):
+    return role in (WHITE_BISHOP, WHITE_KNIGHT, WHITE_ROOK, WHITE_QUEEN)
 
 def pawn_deltas (team):
     # White team initial values

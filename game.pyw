@@ -3,6 +3,8 @@
 import pygame
 import chess
 
+WIDTH, HEIGHT = 256, 240
+SCALE = 2
 FPS = 30 # Frames Per Seconds
 CORNER_X, CORNER_Y = 64, 56
 GRID_SIZE = 16
@@ -99,13 +101,23 @@ class Game:
         self.spritesheet = pygame.image.load('spritesheet.png')
         self.clock = pygame.time.Clock()
         self.running = True
-        self.game_over = False
         self.state = 'menu'
-        self.init_timers()
         self.init_sounds()
+        self.init_game()
+
+    def init_game (self):
+        self.init_movement()
         self.init_chess()
+        self.init_timers()
+        self.init_capturing_area()
         self.init_pieces()
+        self.enter_game_state('wait')
         self.init_message()
+
+    def init_chess (self): 
+        self.chess_board = chess.Board()
+        self.turn = 0
+        self.is_check = False
 
     def init_message (self):
         self.message = None
@@ -113,36 +125,42 @@ class Game:
         self.update_message()
     
     def update_message (self):
-        is_white = self.chess_board.get_current_team() == chess.WHITE_KING
-        if self.is_promoting:
+        is_white = chess.get_current_team(self.turn) == chess.WHITE_KING
+        state = self.game_state
+        if state == 'promote':
             if is_white:
-                self.message = 'white# pawn promotion'
+                message = 'white# pawn promotion'
             else:
-                self.message = 'black$ pawn promotion'
-        elif self.game_over:
+                message = 'black$ pawn promotion'
+        elif state == 'checkmate':
             winner = self.chess_board.get_winner()
             if winner == chess.WHITE_KING:
-                self.message = 'white# checkmates black$!'
+                message = 'white# checkmates black$!'
             elif winner == chess.BLACK_KING:
-                self.message = 'black$ checkmates white#!'
-        else:
+                message = 'black$ checkmates white#!'
+        elif state == 'wait':
             if is_white:
-                if self.chess_board.king_is_in_check(chess.WHITE_KING):
-                    self.message = 'white# is in check'
-                elif self.is_first_move:
-                    self.message = 'white# to make 1st move'
+                if self.is_check:
+                    message = 'white# is in check'
+                elif self.turn == 0:
+                    message = 'white# to make 1st move'
                 else:
-                    self.message = 'white# to move'
+                    message = 'white# to move'
             else:
-                if self.chess_board.king_is_in_check(chess.BLACK_KING):
-                    self.message = 'black$ is in check'
+                if self.is_check:
+                    message = 'black$ is in check'
                 else:
-                    self.message = 'black$ to move'
-        self.message_sprites = []
-        for i, char in enumerate(self.message):
-            tile = char_to_tile(char)
-            s = Sprite(tile, MESSAGE_X + i * 8, MESSAGE_Y, 1)
-            self.message_sprites.append(s)
+                    message = 'black$ to move'
+        else:
+            message = self.message
+
+        if message != self.message:
+            self.message = message
+            self.message_sprites = []
+            for i, char in enumerate(self.message):
+                tile = char_to_tile(char)
+                s = Sprite(tile, MESSAGE_X + i * 8, MESSAGE_Y, 1)
+                self.message_sprites.append(s)
 
     def init_sounds (self):
         s = pygame.mixer.Sound
@@ -154,12 +172,12 @@ class Game:
                 'promote': s('promote.wav'),
                 'can promote': s('can promote.wav'),
                 'capture': s('capture.wav'),
-                'castle': s('castle.wav')
+                'castle': s('castle.wav'),
+                'resign': s('resign.wav')
                 }
 
     def play_sound (self, name):
-        sound = self.sounds[name]
-        sound.play()
+        self.sounds[name].play()
 
     def init_timers (self):
         self.white_ticks = 0
@@ -169,99 +187,157 @@ class Game:
         self.black_seconds = 0
         self.black_minutes = 0
 
-    def init_chess (self):
-        self.chess_board = chess.Board()
-        self.is_first_move = True
+    def init_capturing_area (self):
+        self.black_jail_x, self.black_jail_y = JAIL_START_X, BLACK_JAIL_Y
+        self.white_jail_x, self.white_jail_y = JAIL_START_X, WHITE_JAIL_Y
+
+    def init_movement (self): 
+        # State:
+        self.game_state = None
+        # Input
+        self.input_x = None
+        self.input_y = None
+        self.input_is_fresh = False
+        # Used for the selected piece and destination
+        self.selected_sprite = None
         self.selected_start = None
         self.selected_end = None
+        # Used for moving the selected piece
+        self.moving_steps = None
+        self.moving_dx = None
+        self.moving_dy = None
+
+    def update_check (self): 
+        team = chess.get_current_team(self.turn + 1)
+        self.is_check = self.chess_board.king_is_in_check(team)
+
+    def enter_game_state (self, state):
+        # print(self.game_state, '--->', state)
+        valid_states = ('wait', 'move', 'promote', 'queenside castle', 'kingside castle', 'checkmate', 'castle the rook', 'resign')
+        assert state in valid_states
+        if state == 'wait':
+            # Check for Check here
+            self.selected_sprite = None
+            self.selected_start = None
+            self.selected_end = None
+            self.moving_steps = None
+            self.moving_dx = None
+            self.moving_dy = None
+            self.input_is_fresh = False
+            self.input_x = self.input_y = None
+            # Check for Checkmate
+            self.update_check()
+            if winner := self.chess_board.get_winner():
+                self.enter_game_state('checkmate')
+                return # don't increase the turn counter
+
+        elif state == 'move':
+            assert self.selected_sprite and self.selected_start and self.selected_end
+            start_x, start_y = board_to_screen(*self.selected_start)
+            end_x, end_y = board_to_screen(*self.selected_end)
+            self.moving_steps = 8
+            self.moving_dx = (end_x - start_x) // self.moving_steps
+            self.moving_dy = (end_y - start_y) // self.moving_steps
+
+        elif state == 'promote':
+            assert self.selected_sprite and self.selected_start and self.selected_end 
+
+        elif state in ('queenside castle', 'kingside castle'):
+            assert self.selected_sprite and self.selected_start and self.selected_end
+
+            team = chess.get_current_team(self.turn)
+            can_castle = (
+                    (state == 'kingside castle' and self.chess_board.can_kingside_castle(team))
+                    or
+                    (state == 'queenside castle' and self.chess_board.can_queenside_castle(team)))
+            if can_castle:
+                start_x, start_y = board_to_screen(*self.selected_start)
+                end_x, end_y = board_to_screen(*self.selected_end)
+                self.moving_steps = 4
+                self.moving_dx = (end_x - start_x) // self.moving_steps
+                self.moving_dy = (end_y - start_y) // self.moving_steps
+            else:
+                self.play_sound('error')
+                self.enter_game_state('wait')
+
+        elif state ==  'castle the rook':
+            self.previous_castle_state = self.game_state
+            assert self.previous_castle_state in ('queenside castle', 'kingside castle')
+
+            if chess.get_current_team(self.turn) == chess.BLACK_KING:
+                row = 0
+            else:
+                row = 7
+
+            if self.previous_castle_state == 'kingside castle':
+                self.selected_start = (row, 7)
+                self.selected_end = (row, 5)
+            elif self.previous_castle_state == 'queenside castle':
+                self.selected_start = (row, 0)
+                self.selected_end = (row, 3)
+            self.selected_sprite = self.get_sprite_at(*self.selected_start)
+
+            start_x, start_y = board_to_screen(*self.selected_start)
+            end_x, end_y = board_to_screen(*self.selected_end)
+            self.moving_steps = 4
+            self.moving_dx = (end_x - start_x) // self.moving_steps
+            self.moving_dy = (end_y - start_y) // self.moving_steps
+
+        elif state == 'checkmate':
+            self.sound_delay = 16
+
+        elif state == 'resign':
+            self.move_steps = 32
+            self.play_sound('resign')
+
+        else:
+            # If this point is reached, I made a typo in the above
+            # if-statements
+            raise SyntaxError()
+
+        self.game_state = state
 
     def init_pieces (self):
         self.pieces = []
-        self.moving_piece = None
-        self.selected_piece = None
-        self.move_start = None
-        self.move_end = None
-        self.move_is_short_castle = False
-        self.move_is_long_castle = False
-        self.is_promoting = False
-        self.is_capture = False
-        self.black_jail_x, self.black_jail_y = JAIL_START_X, BLACK_JAIL_Y
-        self.white_jail_x, self.white_jail_y = JAIL_START_X, WHITE_JAIL_Y
         for row in range(8):
             for col in range(8):
                 piece = self.chess_board.get(row, col)
-                if piece == chess.EMPTY:
-                    continue
-                x, y = board_to_screen(row, col)
-                tile = get_piece_tile(piece)
-                new = Sprite(tile, x, y, 2)
-                new.row = row
-                new.col = col
-                new.piece = piece
-                self.pieces.append(new)
+                if piece != chess.EMPTY:
+                    tile = get_piece_tile(piece)
+                    x, y = board_to_screen(row, col)
+                    new = Sprite(tile, x, y, size=2)
+                    new.row = row
+                    new.col = col
+                    new.piece = piece
+                    self.pieces.append(new)
 
     def note_event (self, event):
         if event.type == pygame.QUIT:
             self.running = False
-        elif event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_c:
-                self.do_short_castle = True
-            elif event.key == pygame.K_k:
-                self.do_long_castle = True
         elif event.type == pygame.MOUSEBUTTONDOWN:
-            x = event.pos[0] // 2
-            y = event.pos[1] // 2
-            if self.is_promoting:
-                self.selected_piece = None
-                for piece in self.pieces:
-                    rect = pygame.Rect(piece.x, piece.y, piece.size * 8, piece.size * 8)
-                    if rect.collidepoint((x, y)):
-                        self.selected_piece = piece
-            else:
-                rowcol = screen_to_board(x, y)
-                if rowcol:
-                    selected_piece = self.chess_board.get(*rowcol)
-                    selected_team = chess.piece_team(selected_piece)
-                    current_team = self.chess_board.get_current_team()
-                    selected_is_team = current_team == selected_team
-                    if self.selected_start is None:
-                        if selected_is_team:
-                            # Make a start selection
-                            self.selected_start = rowcol
-                        else:
-                            self.play_sound('error')
-                    else:
-                        if selected_is_team:
-                            # Override start selection
-                            self.selected_start = rowcol
-                            self.selected_end = None
-                        else:
-                            # Make an end selection
-                            self.selected_end = rowcol
+            self.input_x = event.pos[0] // SCALE
+            self.input_y = event.pos[1] // SCALE
+            self.input_is_fresh = True
 
-    def move_piece_grid (self, piece, row, col):
-        piece.row = row
-        piece.col = col
+    def move_sprite_on_board (self, sprite, row, col):
+        assert row in range(8) and col in range(8)
+        sprite.row, sprite.col = row, col
         x, y = board_to_screen(row, col)
-        self.move_piece(piece, x, y)
+        sprite.x, sprite.y = x, y
 
-    def move_piece (self, piece, x, y):
-        piece.x = x
-        piece.y = y
-
-    def remove_piece (self, piece):
-        piece.row = None
-        piece.col = None
-        if chess.piece_team(piece.piece) == chess.WHITE_KING:
-            piece.x = self.white_jail_x
-            piece.y = self.white_jail_y
+    def remove_sprite (self, sprite):
+        sprite.row = None
+        sprite.col = None
+        if chess.piece_team(sprite.piece) == chess.WHITE_KING:
+            sprite.x = self.white_jail_x
+            sprite.y = self.white_jail_y
             self.white_jail_x += 16
             if self.white_jail_x >= JAIL_END_X:
                 self.white_jail_x = JAIL_START_X
                 self.white_jail_y += 16
         else:
-            piece.x = self.black_jail_x
-            piece.y = self.black_jail_y
+            sprite.x = self.black_jail_x
+            sprite.y = self.black_jail_y
             self.black_jail_x += 16
             if self.black_jail_x >= JAIL_END_X:
                 self.black_jail_x = JAIL_START_X
@@ -278,154 +354,227 @@ class Game:
         self.state = 'play'
 
     def update_timers (self): 
-        if self.is_first_move:
-            return
-        if self.chess_board.get_current_team() == chess.BLACK_KING:
-            self.black_ticks += 1
-            if self.black_ticks >= FPS:
-                self.black_ticks = 0
-                self.black_seconds += 1
-                if self.black_seconds == 60:
-                    self.black_seconds = 0
-                    self.black_minutes += 1
-        else:
-            self.white_ticks += 1
-            if self.white_ticks >= FPS:
-                self.white_ticks = 0
-                self.white_seconds += 1
-                if self.white_seconds == 60:
-                    self.white_seconds = 0
-                    self.white_minutes += 1
-
-    def reset (self):
-        self.__init__(self.screen)
+        # Don't update the timer until white has moved first
+        if self.turn > 0 and self.game_state != 'checkmate':
+            if chess.get_current_team(self.turn) == chess.BLACK_KING:
+                self.black_ticks += 1
+                if self.black_ticks >= FPS:
+                    self.black_ticks = 0
+                    self.black_seconds += 1
+                    if self.black_seconds >= 60:
+                        self.black_seconds = 0
+                        self.black_minutes += 1
+            else:
+                self.white_ticks += 1
+                if self.white_ticks >= FPS:
+                    self.white_ticks = 0
+                    self.white_seconds += 1
+                    if self.white_seconds >= 60:
+                        self.white_seconds = 0
+                        self.white_minutes += 1
 
     def update_game (self):
-        if self.game_over:
-            winner = self.chess_board.get_winner()
-            defeated_king = chess.WHITE_KING if (winner == chess.BLACK_KING) else chess.BLACK_KING
-            if self.selected_start:
-                if self.chess_board.get(*self.selected_start) == defeated_king:
-                    self.reset()
-            return
-        self.update_timers()
-        team = self.chess_board.get_current_team()
-        if (self.moving_piece is None) and self.chess_board.get_winner():
-            self.game_over = True
-        elif self.is_promoting:
-            if self.selected_piece is not None:
-                piece = self.selected_piece.piece
-                new_role = chess.piece_role(piece)
-                piece = chess.role_as_team(new_role, team)
-                if self.chess_board.can_promote(team, *self.move_end, new_role):
-                    self.chess_board.promote(team, *self.move_end, new_role)
-                    promote_piece = self.get_piece_at(*self.move_end)
-                    promote_piece.piece = piece
-                    promote_piece.tile = get_piece_tile(piece)
-                    self.is_promoting = False
-                    # Finish the rest of the post-move logic
-                    self.move_start = None
-                    self.move_end = None
-                    self.chess_board.turn += 1
-                    self.play_sound('promote')
-                self.selected_piece = None
-        elif self.moving_piece is not None:
-            self.moving_steps -= 1
-            if self.moving_steps <= 0:
-                self.move_piece_grid(self.moving_piece, *self.move_end)
-                self.moving_piece = None
-                self.move_start = self.move_end = None
-                self.move_start = None
-                self.move_end = None
-                self.chess_board.turn += 1
-                self.is_first_move = False
-                self.play_resulting_sound()
-                if self.target is not None:
-                    self.remove_piece(self.target)
-                    is_capture = True
-            else:
-                self.moving_piece.x += self.moving_dx
-                self.moving_piece.y += self.moving_dy
-        elif self.move_start is not None and self.move_end is not None:
-            if self.move_is_long_castle or self.move_is_short_castle:
-                king = self.get_piece_at(*self.move_start)
-                self.move_piece_grid(king, *self.move_end)
-                if self.move_is_long_castle:
-                    castle = self.get_piece_at(self.move_start[0], 0)
-                    self.move_piece_grid(castle, self.move_end[0], self.move_end[1] + 1)
-                    self.chess_board.move_castle_long(team)
+        if self.game_state == 'wait':
+            # Validate selection of pieces and moves
+            if self.input_is_fresh:
+                self.input_is_fresh = False
+                rowcol = screen_to_board(self.input_x, self.input_y)
+                if rowcol:
+                    current_team = chess.get_current_team(self.turn)
+                    sprite = self.get_sprite_at(*rowcol)
+                    is_team_mate = (sprite is not None) and (current_team == chess.piece_team(sprite.piece))
+                    if is_team_mate:
+                            self.selected_start = rowcol
+                    else:
+                        if self.selected_start:
+                            self.selected_end = rowcol
+                        else:
+                            self.play_sound('error')
+                            self.enter_game_state('wait')
                 else:
-                    castle = self.get_piece_at(self.move_start[0], 7)
-                    self.move_piece_grid(castle, self.move_end[0], self.move_end[1] - 1)
-                    self.chess_board.move_castle_short(team)
-                self.chess_board.turn += 1
-                self.is_first_move = False
-                self.play_sound('castle')
-                self.move_start = None
-                self.move_end = None
-                self.move_is_long_castle = self.move_is_short_castle = False
+                    # Clicking off of the board --> deselect everything
+                    self.enter_game_state('wait')
+            elif self.selected_start and self.selected_end:
+                # Validate start of selection
+                self.selected_sprite = self.get_sprite_at(*self.selected_start) # could be None
+                target_sprite = self.get_sprite_at(*self.selected_end) # could be None
+                current_team = chess.get_current_team(self.turn)
+                is_legal_move = self.chess_board.is_legal_move(current_team, *self.selected_start, *self.selected_end)
+                if is_legal_move:
+                    self.enter_game_state('move')
+                elif self.is_move_queenside_castle(*self.selected_start, *self.selected_end) and self.chess_board.can_queenside_castle(current_team):
+                    self.enter_game_state('queenside castle')
+                elif self.is_move_kingside_castle(*self.selected_start, *self.selected_end) and self.chess_board.can_kingside_castle(current_team):
+                    self.enter_game_state('kingside castle')
+                else:
+                    self.play_sound('error')
+                    self.enter_game_state('wait')
+        elif self.game_state == 'move':
+            assert self.selected_sprite and self.selected_start and self.selected_end
+            assert None not in (self.moving_dx, self.moving_dy, self.moving_steps)
+            if self.moving_steps > 0:
+                # Move the sprite a little
+                self.moving_steps -= 1
+                self.selected_sprite.x += self.moving_dx
+                self.selected_sprite.y += self.moving_dy
             else:
-                piece = self.get_piece_at(*self.move_start)
-                self.target = self.get_piece_at(*self.move_end)
-                self.moving_piece = piece
-                self.moving_dx = 2 * (self.move_end[1] - self.move_start[1])
-                self.moving_dy = 2 * (self.move_end[0] - self.move_start[0])
-                self.moving_steps = 8
-                self.is_capture = False
-                self.chess_board.move(*self.move_start, *self.move_end)
-                if self.chess_board.is_promotable(team, *self.move_end):
-                    self.is_promoting = True
+                # Remove the captured sprite (if any)
+                target = self.get_sprite_at(*self.selected_end) 
+                if target:
+                    self.remove_sprite(target)
+                # Finalize the moving sprite
+                self.move_sprite_on_board(self.selected_sprite, *self.selected_end)
+                # Update the chess board
+                self.chess_board.move(*self.selected_start, *self.selected_end)
+                if self.chess_board.is_promotable(*self.selected_end):
                     self.play_sound('can promote')
-        elif self.selected_start is not None and self.selected_end is not None:
-            piece = self.chess_board.get(*self.selected_start)
-            if self.chess_board.is_legal_move(team, *self.selected_start, *self.selected_end):
-                self.move_start = self.selected_start
-                self.move_end = self.selected_end
-                self.selected_start = None
-                self.selected_end = None
-            elif self.chess_board.king_can_castle_long(team):
-                king_row, king_col = self.chess_board.find_piece(team)
-                if self.selected_start == (king_row, king_col):
-                    if self.selected_end == (king_row, king_col - 2):
-                        self.move_is_long_castle = True
-                        self.move_start = self.selected_start
-                        self.move_end = self.selected_end
-                        self.selected_start = None
-                        self.selected_end = None
-            elif self.chess_board.king_can_castle_short(team):
-                king_row, king_col = self.chess_board.find_piece(team)
-                if self.selected_start == (king_row, king_col):
-                    if self.selected_end == (king_row, king_col + 2):
-                        self.move_is_short_castle = True
-                        self.move_start = self.selected_start
-                        self.move_end = self.selected_end
-                        self.selected_start = None
-                        self.selected_end = None
+                    self.enter_game_state('promote')
+                else:
+                    self.update_check()
+                    if self.is_check:
+                        self.play_sound('check')
+                    else:
+                        if target: 
+                            self.play_sound('capture')
+                        else:
+                            self.play_sound('move')
+                    self.turn += 1
+                    self.enter_game_state('wait')
+
+        elif self.game_state == 'promote':
+            if self.input_is_fresh:
+                self.input_is_fresh = False
+                self.selected_sprite = None
+                for sprite in self.pieces:
+                    rect = pygame.Rect(sprite.x, sprite.y, 16, 16)
+                    if rect.collidepoint(self.input_x, self.input_y):
+                        self.selected_sprite = sprite
+                        break 
+                if self.selected_sprite:
+                    current_team = chess.get_current_team(self.turn)
+                    piece = self.selected_sprite.piece
+                    role = chess.piece_role(piece)
+                    if chess.is_promotable_role(role):
+                        promote_pawn = self.get_sprite_at(*self.selected_end)
+                        new_piece = chess.role_as_team(role, current_team)
+                        promote_pawn.piece = new_piece 
+                        promote_pawn.tile = get_piece_tile(promote_pawn.piece)
+                        self.play_sound('promote')
+                        self.chess_board.promote(current_team, *self.selected_end, role)
+                        self.turn += 1
+                        self.enter_game_state('wait')
+                    else:
+                        self.play_sound('error')
+                else:
+                    self.play_sound('error')
+
+        elif self.game_state in ('queenside castle', 'kingside castle'):
+            assert self.selected_sprite and self.selected_start and self.selected_end
+            assert None not in (self.moving_dx, self.moving_dy, self.moving_steps)
+            assert chess.piece_role(self.selected_sprite.piece) == chess.WHITE_KING
+            if self.moving_steps > 0:
+                # Move the sprite (KING) a little
+                self.moving_steps -= 1
+                self.selected_sprite.x += self.moving_dx
+                self.selected_sprite.y += self.moving_dy
             else:
-                self.selected_start = None
-                self.selected_end = None
-                self.play_sound('error')
+                # Align king to grid
+                self.move_sprite_on_board(self.selected_sprite, *self.selected_end)
+                # Now start moving the rook
+                self.enter_game_state('castle the rook') 
+
+        elif self.game_state == 'castle the rook':
+            assert self.selected_sprite and self.selected_start and self.selected_end
+            assert None not in (self.moving_dx, self.moving_dy, self.moving_steps)
+            assert self.previous_castle_state in ('queenside castle', 'kingside castle')
+
+            if self.moving_steps > 0:
+                # Move the sprite a little
+                self.moving_steps -= 1
+                self.selected_sprite.x += self.moving_dx
+                self.selected_sprite.y += self.moving_dy
+            else:
+                # Finalize the moving sprite
+                self.move_sprite_on_board(self.selected_sprite, *self.selected_end)
+                # Update the chess board
+                team = chess.get_current_team(self.turn)
+                if self.previous_castle_state == 'queenside castle':
+                    self.chess_board.move_queenside_castle(team)
+                elif self.previous_castle_state == 'kingside castle':
+                    self.chess_board.move_kingside_castle(team) 
+                self.turn += 1
+                self.play_sound('castle')
+                self.enter_game_state('wait')
+
+        elif self.game_state == 'checkmate':
+            # Wait to play the checkmate sound
+            if self.sound_delay is not None:
+                if self.sound_delay > 0:
+                    self.sound_delay -= 1
+                else: 
+                    self.sound_delay = None
+                    self.play_sound('checkmate')
+            # Check for the player to click on their king to resign
+            if self.input_is_fresh:
+                self.input_is_fresh = False
+                if rowcol := screen_to_board(self.input_x, self.input_y):
+                    if sprite := self.get_sprite_at(*rowcol):
+                        losing_king = chess.get_current_team(self.turn)
+                        if sprite.piece == losing_king:
+                            self.enter_game_state('resign')
+
+        elif self.game_state == 'resign':
+            if self.move_steps > 0:
+                self.move_steps -= 1
+            else:
+                # Reset the game
+                self.__init__(self.screen)
+        else:
+            raise ValueError('invalid Game.game_state')
+
+        self.update_timers()
         self.update_message()
 
-    def play_resulting_sound (self):
-        sound = None
-        if self.chess_board.king_is_in_check(self.chess_board.get_current_team()):
-            if self.chess_board.get_winner():
-                sound = 'checkmate'
-            else:
-                sound = 'check'
+    def is_move_queenside_castle (self, start_row, start_col, end_row, end_col):
+        # Input pattern for castling queenside
+        if chess.get_current_team(self.turn) == chess.BLACK_KING:
+            row = 0
         else:
-            if self.is_capture:
-                sound = 'capture'
-            else:
-                sound = 'move'
-        self.play_sound(sound)
+            row = 7
+        start_is_king  = start_row == row and start_col == 4
+        end_is_castling = end_row == row and end_col == 2
+        return start_is_king and end_is_castling
+
+    def is_move_kingside_castle (self, start_row, start_col, end_row, end_col):
+        # Input pattern for castling kingside
+        if chess.get_current_team(self.turn) == chess.BLACK_KING:
+            row = 0
+        else:
+            row = 7
+        start_is_king  = start_row == row and start_col == 4
+        end_is_castling = end_row == row and end_col == 6
+        return start_is_king and end_is_castling
+
+    def update_result_sounds (self):
+        if self.chess_board.get_winner():
+            self.play_sound('checkmate')
+        elif self.chess_board.king_is_in_check(chess.get_current_team(self.turn)):
+            self.play_sound('check')
 
     def display (self):
         if self.state == 'menu':
             pass
         else:
-            self.display_game()
+            self.display_background()
+            self.display_pieces()
+            self.display_message()
+            self.display_timers()
+            if self.selected_start:
+                x, y = board_to_screen(*self.selected_start)
+                pygame.draw.rect(self.screen, (0,255,0), (x, y, 16, 16), 1)
+            if self.selected_end:
+                x, y = board_to_screen(*self.selected_end)
+                pygame.draw.rect(self.screen, (255,0,0), (x, y, 16, 16), 1)
 
     def display_pieces (self): 
         for piece in self.pieces:
@@ -447,16 +596,10 @@ class Game:
         self.display_number(self.white_minutes, 104, 224)
         self.display_number(self.white_seconds, 128, 224)
 
-    def display_game (self):
-        self.display_background()
-        self.display_pieces()
-        self.display_message()
-        self.display_timers()
-
-    def get_piece_at (self, row, col):
-        for piece in self.pieces:
-            if piece.row == row and piece.col == col:
-                return piece
+    def get_sprite_at (self, row, col):
+        for sprite in self.pieces:
+            if sprite.row == row and sprite.col == col:
+                return sprite
 
     def display_number (self, number, x, y):
         string = str(number)
@@ -529,15 +672,15 @@ def char_to_tile (char):
 def main ():
     pygame.init()
     screen = display_init()
-    screen2 = pygame.Surface((256*2, 240*2))
+    screen2 = pygame.Surface((WIDTH * SCALE, HEIGHT * SCALE))
     game = Game(screen)
     while game.running:
         for event in pygame.event.get():
             game.note_event(event)
         game.update()
         game.display()
-        small = screen.subsurface((0, 0, 256, 240))
-        pygame.transform.scale(small, (256*2, 240*2), screen2)
+        small = screen.subsurface((0, 0, WIDTH, HEIGHT))
+        pygame.transform.scale(small, (WIDTH * SCALE, HEIGHT * SCALE), screen2)
         screen.blit(screen2, (0, 0))
         pygame.display.update()
     game_quit()
