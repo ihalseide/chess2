@@ -2,6 +2,7 @@
 
 import pygame
 import chess
+import os
 
 WIDTH, HEIGHT = 256, 240
 SCALE = 2
@@ -247,7 +248,7 @@ class Game:
                 self.message_sprites.append(s)
 
     def init_sounds (self):
-        s = pygame.mixer.Sound
+        s = lambda name: pygame.mixer.Sound(os.path.join('sound', name))
         self.sounds = {
                 'check': s('check.wav'),
                 'checkmate': s('checkmate.wav'),
