@@ -298,8 +298,8 @@ class Game:
         self.is_check = self.chess_board.king_is_in_check(team)
 
     def enter_game_state (self, state):
-        # print(self.game_state, '--->', state)
-        valid_states = ('wait', 'move', 'promote', 'queenside castle', 'kingside castle', 'checkmate', 'castle the rook', 'resign')
+        valid_states = ('wait', 'move', 'promote', 'queenside castle',
+                'kingside castle', 'checkmate', 'castle the rook', 'resign')
         assert state in valid_states
         if state == 'wait':
             # Check for Check here
@@ -517,7 +517,6 @@ class Game:
                     # Clicking off of the board --> deselect everything
                     self.enter_game_state('wait')
             if self.selected_start:
-                self.create_highlight_sprites()
                 if self.selected_end:
                     # Validate start of selection
                     self.selected_sprite = self.get_sprite_at(*self.selected_start) # could be None
