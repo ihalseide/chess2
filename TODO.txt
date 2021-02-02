@@ -1,4 +1,4 @@
-Animate the sprite's movement for the pieces
+Chess Game To-do list
 
 Add a menu screen
 - pieces scrolling across the screen, or spinning around?
