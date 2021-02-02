@@ -748,7 +748,7 @@ def get_sprite (spritesheet, sprite_id, sprite_size):
 def get_piece_tile (piece):
     i = 20
     if chess.piece_team(piece) == chess.BLACK_KING:
-        i += 128
+        i += 64
     role = chess.piece_role(piece)
     if role == chess.WHITE_BISHOP:
         i += 2
