@@ -1,9 +1,0 @@
-Chess Game To-do list
-
-Show available moves when a piece is selected
-
-Add the easter eggs
-
-Add an AI for 0 and 1 player mode
-
-Add En Passant move for pawns
