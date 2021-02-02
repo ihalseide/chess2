@@ -180,7 +180,7 @@ class Game:
         self.cursor_y = 256
 
     def init_transition (self): 
-        self.transition_timer = 150
+        self.transition_timer = 90
         self.state = 'transition'
         self.background = TRANSITION_BACKGROUND
 
@@ -194,6 +194,7 @@ class Game:
         self.init_timers()
         self.init_capturing_area()
         self.init_pieces()
+        self.highlight_sprites = []
         self.enter_game_state('wait')
         self.init_message()
 
@@ -309,6 +310,7 @@ class Game:
             self.moving_dy = None
             self.input_is_fresh = False
             self.input_x = self.input_y = None
+            self.highlight_sprites = []
             # Check for Checkmate
             self.update_check()
             if winner := self.chess_board.get_winner():
@@ -420,7 +422,7 @@ class Game:
                 if self.num_players is not None:
                     self.init_game()
                     self.init_transition()
-            elif state == 'transition':
+            elif self.state == 'transition':
                 pass
             else:
                 raise SyntaxError('bad state')
@@ -503,6 +505,7 @@ class Game:
                     is_team_mate = (sprite is not None) and (current_team == chess.piece_team(sprite.piece))
                     if is_team_mate:
                             self.selected_start = rowcol
+                            self.create_highlight_sprites()
                     else:
                         if self.selected_start:
                             self.selected_end = rowcol
@@ -512,21 +515,23 @@ class Game:
                 else:
                     # Clicking off of the board --> deselect everything
                     self.enter_game_state('wait')
-            elif self.selected_start and self.selected_end:
-                # Validate start of selection
-                self.selected_sprite = self.get_sprite_at(*self.selected_start) # could be None
-                target_sprite = self.get_sprite_at(*self.selected_end) # could be None
-                current_team = chess.get_current_team(self.turn)
-                is_legal_move = self.chess_board.is_legal_move(current_team, *self.selected_start, *self.selected_end)
-                if is_legal_move:
-                    self.enter_game_state('move')
-                elif self.is_move_queenside_castle(*self.selected_start, *self.selected_end) and self.chess_board.can_queenside_castle(current_team):
-                    self.enter_game_state('queenside castle')
-                elif self.is_move_kingside_castle(*self.selected_start, *self.selected_end) and self.chess_board.can_kingside_castle(current_team):
-                    self.enter_game_state('kingside castle')
-                else:
-                    self.play_sound('error')
-                    self.enter_game_state('wait')
+            if self.selected_start:
+                self.create_highlight_sprites()
+                if self.selected_end:
+                    # Validate start of selection
+                    self.selected_sprite = self.get_sprite_at(*self.selected_start) # could be None
+                    target_sprite = self.get_sprite_at(*self.selected_end) # could be None
+                    current_team = chess.get_current_team(self.turn)
+                    is_legal_move = self.chess_board.is_legal_move(current_team, *self.selected_start, *self.selected_end)
+                    if is_legal_move:
+                        self.enter_game_state('move')
+                    elif self.is_move_queenside_castle(*self.selected_start, *self.selected_end) and self.chess_board.can_queenside_castle(current_team):
+                        self.enter_game_state('queenside castle')
+                    elif self.is_move_kingside_castle(*self.selected_start, *self.selected_end) and self.chess_board.can_kingside_castle(current_team):
+                        self.enter_game_state('kingside castle')
+                    else:
+                        self.play_sound('error')
+                        self.enter_game_state('wait')
         elif self.game_state == 'move':
             assert self.selected_sprite and self.selected_start and self.selected_end
             assert None not in (self.moving_dx, self.moving_dy, self.moving_steps)
@@ -653,6 +658,16 @@ class Game:
         self.update_timers()
         self.update_message()
 
+    def create_highlight_sprites (self):
+        self.highlight_sprites = [Sprite(330, *board_to_screen(*self.selected_start), 2)]
+        moves = self.chess_board.piece_moves(*self.selected_start)
+        team = chess.get_current_team(self.turn)
+        for move in moves:
+            if self.chess_board.is_legal_move(team, *self.selected_start, *move):
+                x, y = board_to_screen(*move)
+                sprite = Sprite(328, x, y, 2)
+                self.highlight_sprites.append(sprite)
+
     def is_move_queenside_castle (self, start_row, start_col, end_row, end_col):
         # Input pattern for castling queenside
         if chess.get_current_team(self.turn) == chess.BLACK_KING:
@@ -682,21 +697,19 @@ class Game:
     def display (self):
         self.display_background()
         if self.state == 'play':
+            # Highlighted squares
+            for sprite in self.highlight_sprites:
+                draw_tile(self.screen, self.spritesheet, sprite.tile, sprite.x, sprite.y, 2)
+            # Game piece sprites
             for sprite in self.pieces:
                 draw_tile(self.screen, self.spritesheet, sprite.tile, sprite.x, sprite.y, sprite.size)
+            # Message character sprites
             for sprite in self.message_sprites:
                 draw_tile(self.screen, self.spritesheet, sprite.tile, sprite.x, sprite.y)
             self.display_number(self.black_minutes, 104, 8)
             self.display_number(self.black_seconds, 128, 8)
             self.display_number(self.white_minutes, 104, 224)
             self.display_number(self.white_seconds, 128, 224)
-            # TODO: make these rectangles render nicer
-            if self.selected_start:
-                x, y = board_to_screen(*self.selected_start)
-                pygame.draw.rect(self.screen, (0,255,0), (x, y, 16, 16), 1)
-            if self.selected_end:
-                x, y = board_to_screen(*self.selected_end)
-                pygame.draw.rect(self.screen, (255,0,0), (x, y, 16, 16), 1)
         elif self.state == 'menu':
             cursor = 257
             draw_tile(self.screen, self.spritesheet, cursor, 80, self.cursor_y)
