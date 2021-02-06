@@ -295,7 +295,7 @@ class Game:
 
     def update_check (self): 
         team = chess.get_current_team(self.turn + 1)
-        self.is_check = self.chess_board.king_is_in_check(team)
+        self.is_check = self.chess_board.is_king_in_check(team)
 
     def enter_game_state (self, state):
         valid_states = ('wait', 'move', 'promote', 'queenside castle',
@@ -314,8 +314,9 @@ class Game:
             self.highlight_sprites = []
             # Check for Checkmate
             self.update_check()
-            if winner := self.chess_board.get_winner():
+            if self.chess_board.is_game_over():
                 self.enter_game_state('checkmate')
+                self.game_state = 'checkmate'
                 return # don't increase the turn counter
 
         elif state == 'move':
@@ -333,10 +334,11 @@ class Game:
             assert self.selected_sprite and self.selected_start and self.selected_end
 
             team = chess.get_current_team(self.turn)
+            king_square = self.chess_board.find_piece(team)
             can_castle = (
-                    (state == 'kingside castle' and self.chess_board.can_kingside_castle(team))
+                    (state == 'kingside castle' and self.chess_board.can_castle_kingside(*king_square))
                     or
-                    (state == 'queenside castle' and self.chess_board.can_queenside_castle(team)))
+                    (state == 'queenside castle' and self.chess_board.can_castle_queenside(*king_square)))
             if can_castle:
                 start_x, start_y = board_to_screen(*self.selected_start)
                 end_x, end_y = board_to_screen(*self.selected_end)
@@ -355,6 +357,9 @@ class Game:
                 row = 0
             else:
                 row = 7
+
+            # Now is when the chess board data is updated during castling
+            self.chess_board.move(*self.selected_start, *self.selected_end)
 
             if self.previous_castle_state == 'kingside castle':
                 self.selected_start = (row, 7)
@@ -447,7 +452,7 @@ class Game:
     def remove_sprite (self, sprite):
         sprite.row = None
         sprite.col = None
-        if chess.piece_team(sprite.piece) == chess.WHITE_KING:
+        if chess.get_piece_team(sprite.piece) == chess.WHITE_KING:
             sprite.x = self.white_jail_x
             sprite.y = self.white_jail_y
             self.white_jail_x += 16
@@ -503,7 +508,7 @@ class Game:
                 if rowcol:
                     current_team = chess.get_current_team(self.turn)
                     sprite = self.get_sprite_at(*rowcol)
-                    is_team_mate = (sprite is not None) and (current_team == chess.piece_team(sprite.piece))
+                    is_team_mate = (sprite is not None) and (current_team == chess.get_piece_team(sprite.piece))
                     if is_team_mate:
                             self.selected_start = rowcol
                             self.create_highlight_sprites()
@@ -524,11 +529,13 @@ class Game:
                     current_team = chess.get_current_team(self.turn)
                     is_legal_move = self.chess_board.is_legal_move(current_team, *self.selected_start, *self.selected_end)
                     if is_legal_move:
-                        self.enter_game_state('move')
-                    elif self.is_move_queenside_castle(*self.selected_start, *self.selected_end) and self.chess_board.can_queenside_castle(current_team):
-                        self.enter_game_state('queenside castle')
-                    elif self.is_move_kingside_castle(*self.selected_start, *self.selected_end) and self.chess_board.can_kingside_castle(current_team):
-                        self.enter_game_state('kingside castle')
+                        castle = self.chess_board.move_is_castling(*self.selected_start, *self.selected_end)
+                        if castle == chess.WHITE_QUEEN: 
+                            self.enter_game_state('queenside castle')
+                        elif castle == chess.WHITE_KING:
+                            self.enter_game_state('kingside castle')
+                        else:
+                            self.enter_game_state('move')
                     else:
                         self.play_sound('error')
                         self.enter_game_state('wait')
@@ -576,7 +583,7 @@ class Game:
                 if self.selected_sprite:
                     current_team = chess.get_current_team(self.turn)
                     piece = self.selected_sprite.piece
-                    role = chess.piece_role(piece)
+                    role = chess.get_piece_role(piece)
                     if chess.is_promotable_role(role):
                         promote_pawn = self.get_sprite_at(*self.selected_end)
                         new_piece = chess.role_as_team(role, current_team)
@@ -594,7 +601,7 @@ class Game:
         elif self.game_state in ('queenside castle', 'kingside castle'):
             assert self.selected_sprite and self.selected_start and self.selected_end
             assert None not in (self.moving_dx, self.moving_dy, self.moving_steps)
-            assert chess.piece_role(self.selected_sprite.piece) == chess.WHITE_KING
+            assert chess.get_piece_role(self.selected_sprite.piece) == chess.WHITE_KING
             if self.moving_steps > 0:
                 # Move the sprite (KING) a little
                 self.moving_steps -= 1
@@ -619,12 +626,6 @@ class Game:
             else:
                 # Finalize the moving sprite
                 self.move_sprite_on_board(self.selected_sprite, *self.selected_end)
-                # Update the chess board
-                team = chess.get_current_team(self.turn)
-                if self.previous_castle_state == 'queenside castle':
-                    self.chess_board.move_queenside_castle(team)
-                elif self.previous_castle_state == 'kingside castle':
-                    self.chess_board.move_kingside_castle(team) 
                 self.turn += 1
                 self.play_sound('castle')
                 self.enter_game_state('wait')
@@ -660,33 +661,13 @@ class Game:
 
     def create_highlight_sprites (self):
         self.highlight_sprites = [Sprite(330, *board_to_screen(*self.selected_start), 2)]
-        moves = self.chess_board.piece_moves(*self.selected_start)
+        moves = self.chess_board.get_piece_moves(*self.selected_start)
         team = chess.get_current_team(self.turn)
         for move in moves:
             if self.chess_board.is_legal_move(team, *self.selected_start, *move):
                 x, y = board_to_screen(*move)
                 sprite = Sprite(328, x, y, 2)
                 self.highlight_sprites.append(sprite)
-
-    def is_move_queenside_castle (self, start_row, start_col, end_row, end_col):
-        # Input pattern for castling queenside
-        if chess.get_current_team(self.turn) == chess.BLACK_KING:
-            row = 0
-        else:
-            row = 7
-        start_is_king  = start_row == row and start_col == 4
-        end_is_castling = end_row == row and end_col == 2
-        return start_is_king and end_is_castling
-
-    def is_move_kingside_castle (self, start_row, start_col, end_row, end_col):
-        # Input pattern for castling kingside
-        if chess.get_current_team(self.turn) == chess.BLACK_KING:
-            row = 0
-        else:
-            row = 7
-        start_is_king  = start_row == row and start_col == 4
-        end_is_castling = end_row == row and end_col == 6
-        return start_is_king and end_is_castling
 
     def update_result_sounds (self):
         if self.chess_board.get_winner():
@@ -747,9 +728,9 @@ def get_sprite (spritesheet, sprite_id, sprite_size):
 
 def get_piece_tile (piece):
     i = 20
-    if chess.piece_team(piece) == chess.BLACK_KING:
+    if chess.get_piece_team(piece) == chess.BLACK_KING:
         i += 64
-    role = chess.piece_role(piece)
+    role = chess.get_piece_role(piece)
     if role == chess.WHITE_BISHOP:
         i += 2
     elif role == chess.WHITE_KNIGHT:

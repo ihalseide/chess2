@@ -1,6 +1,6 @@
 # This file contains the main code and logic behind the game of Chess
 
-# I use these line breaks to avoid some mistakes, since it is important that these constant numbers are correct
+# Use these line breaks to avoid mistakes, since it is important that these constant numbers are correct
 # The kings are also used to represent the teams as a whole
 EMPTY, \
 WHITE_PAWN, \
@@ -17,19 +17,389 @@ BLACK_QUEEN, \
 BLACK_KING \
 = range(13)
 
-def get_current_team (turn_number):
-    if turn_number % 2 == 0:
-        return WHITE_KING
-    else:
-        return BLACK_KING
+# Board size constants for calculations
+LENGTH = 8
+NUM_SQUARES = LENGTH * LENGTH
 
-def pieces_are_enemies (p1, p2):
-    p1_team = piece_team(p1)
-    p2_team = piece_team(p2)
-    if p1_team is None or p2_team is None:
-        return False 
-    else:
-        return not (p1_team == p2_team)
+STANDARD_BOARD = [
+        BLACK_ROOK, BLACK_KNIGHT, BLACK_BISHOP, BLACK_QUEEN, BLACK_KING, BLACK_BISHOP, BLACK_KNIGHT, BLACK_ROOK,
+        BLACK_PAWN, BLACK_PAWN, BLACK_PAWN, BLACK_PAWN, BLACK_PAWN, BLACK_PAWN, BLACK_PAWN, BLACK_PAWN,
+        EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY,
+        EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY,
+        EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY,
+        EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY,
+        WHITE_PAWN, WHITE_PAWN, WHITE_PAWN, WHITE_PAWN, WHITE_PAWN, WHITE_PAWN, WHITE_PAWN, WHITE_PAWN,
+        WHITE_ROOK, WHITE_KNIGHT, WHITE_BISHOP, WHITE_QUEEN, WHITE_KING, WHITE_BISHOP, WHITE_KNIGHT, WHITE_ROOK,
+        ]
+
+# Standard piece locations for castling
+QUEENS_ROOK_COL = 0
+KINGS_ROOK_COL = 7
+KING_COL = 4
+
+class Board:
+
+    def __init__ (self, pieces=None, moved=None, history=None):
+        # These lists should be a COPY of the prototypes so that they don't modify the input
+        # lists!
+        if pieces is None:
+            self.pieces = list_copy(STANDARD_BOARD)
+        else:
+            self.pieces = list_copy(pieces)
+
+        if moved is None:
+            self.moved =  [False for x in range(NUM_SQUARES)]
+        else:
+            self.moved = list_copy(moved)
+
+        self.history = list_copy(history) if history else []
+
+    def set (self, row, col, piece):
+        i = rowcol_to_index(row, col)
+        if i is not None:
+            if is_piece(piece) or piece == EMPTY:
+                self.pieces[i] = piece
+            else:
+                raise ValueError('invalid piece')
+        else:
+            raise ValueError('invalid row or column')
+
+    def get (self, row, col):
+        i = rowcol_to_index(row, col)
+        if i is not None:
+            return self.pieces[i]
+        else:
+            raise ValueError('invalid row or column')
+
+    def copy (self):
+        return Board(self.pieces, self.moved, self.history)
+
+    def get_piece_is_threatened (self, row, col):
+        team = get_piece_team(self.get(row, col))
+        return self.get_square_is_threatened(team, row, col)
+
+    def get_square_is_threatened (self, team, row, col):
+        return len(self.get_square_threats(get_piece_team(team), row, col)) > 0
+
+    def get_square_threats (self, team, row, col):
+        result = []
+        for other_row in range(LENGTH):
+            for other_col in range(LENGTH):
+                if self.get_square_is_threatened_by(team, row, col, other_row, other_col):
+                    result.append((other_row, other_col))
+        return result
+
+    def get_square_is_threatened_by (self, team, row, col, by_row, by_col):
+        team = get_piece_team(team)
+        other_team = get_piece_team(self.get(by_row, by_col))
+        return team != other_team and (row, col) in self.get_piece_moves(by_row, by_col)
+
+    def empty_or_enemy (self, team, row, col):
+        team = get_piece_team(team)
+        return (self.get(row, col) == EMPTY) or pieces_are_enemies(team, self.get(row, col))
+
+    def get_piece_moves (self, row, col) -> list:
+        role = get_piece_role(self.get(row, col))
+        if role:
+            if role == WHITE_PAWN:
+                move_func = self.get_pawn_moves_all
+            elif role == WHITE_BISHOP:
+                move_func =  self.get_bishop_moves
+            elif role == WHITE_KNIGHT:
+                move_func =  self.get_knight_moves
+            elif role == WHITE_ROOK:
+                move_func =  self.get_rook_moves
+            elif role == WHITE_QUEEN:
+                move_func =  self.get_queen_moves
+            elif role == WHITE_KING:
+                move_func =  self.get_king_moves_all
+            return move_func(row, col)
+        else:
+            return []
+
+    def get_pawn_moves (self, row, col):
+        moves = []
+        piece = self.get(row, col)
+        forward, forward_2, diag_r, diag_l = pawn_plus_deltas(row, col, get_piece_team(piece))
+        # Moving forward 1 and 2 spaces
+        if in_board_range(*forward) and self.get(*forward) == EMPTY:
+            moves.append(forward)
+            # First move can be 2 spaces too
+            if row in (1, 6) and in_board_range(*forward_2) and self.get(*forward_2) == EMPTY:
+                moves.append(forward_2)
+        # Capturing diagonals
+        for diag in (diag_r, diag_l):
+            if in_board_range(*diag) and pieces_are_enemies(piece, self.get(*diag)):
+                moves.append(diag)
+        return moves
+
+    def get_pawn_moves_all (self, row, col):
+        moves = self.get_pawn_moves(row, col)
+        piece = self.get(row, col)
+        if row == get_en_passant_row(piece):
+            last_r1, last_c1, last_r2, last_c2 = self.history[-1]
+            last_piece = self.get(last_r2, last_c2)
+            if get_piece_role(last_piece) == WHITE_PAWN:
+                last_change_row = abs(last_r2 - last_r1)
+                if last_change_row == 2:
+                    d_col = last_c1 - col
+                    on_adjacent_column = abs(d_col) == 1
+                    if on_adjacent_column:
+                        next_row = row + get_pawn_direction(get_piece_team(piece))
+                        next_col = col + d_col
+                        moves.append((next_row, next_col))
+        return moves
+
+    def get_bishop_moves (self, row, col):
+        moves = []
+        for drow in (-1, 1):
+            for dcol in (-1, 1):
+                new_row = row + drow
+                new_col = col + dcol
+                while in_board_range(new_row, new_col) and self.get(new_row, new_col) == EMPTY:
+                    moves.append((new_row, new_col))
+                    new_row += drow
+                    new_col += dcol
+                # The very last square traversed can be a capture
+                piece = self.get(row, col)
+                if in_board_range(new_row, new_col) and pieces_are_enemies(piece, self.get(new_row, new_col)):
+                    moves.append((new_row, new_col))
+        return moves
+
+    def get_knight_moves (self, row, col):
+        leaping_deltas = [(-1, -2), (1, -2), (-1, 2), (1, 2), (2, -1), (2, 1), (-2, -1), (-2, 1)]
+        moves = []
+        piece = self.get(row, col)
+        for drow, dcol in leaping_deltas:
+            new_row = row + drow
+            new_col = col + dcol
+            if in_board_range(new_row, new_col) and self.empty_or_enemy(piece, new_row, new_col):
+                moves.append((new_row, new_col))
+        return moves
+
+    def get_rook_moves (self, row, col):
+        moves = []
+        for drow, dcol in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            new_row = row + drow
+            new_col = col + dcol
+            while in_board_range(new_row, new_col) and self.get(new_row, new_col) == EMPTY:
+                moves.append((new_row, new_col))
+                new_row += drow
+                new_col += dcol
+            # The very last square traversed can be a capture
+            piece = self.get(row, col)
+            if in_board_range(new_row, new_col) and self.empty_or_enemy(piece, new_row, new_col):
+                moves.append((new_row, new_col))
+        return moves
+
+    def get_queen_moves (self, row, col):
+        rook = self.get_rook_moves(row, col)
+        bishop = self.get_bishop_moves(row, col)
+        return rook + bishop
+
+    def get_king_moves (self, row, col):
+        moves = []
+        piece = self.get(row, col)
+        for drow in (-1, 0, 1):
+            for dcol in (-1, 0, 1):
+                if drow == 0 and dcol == 0:
+                    continue
+                new_row = row + drow
+                new_col = col + dcol
+                if in_board_range(new_row, new_col) and self.empty_or_enemy(piece, new_row, new_col):
+                    moves.append((new_row, new_col))
+        return moves
+
+    def get_king_moves_all (self, row, col):
+        moves = self.get_king_moves(row, col)
+        if self.can_castle_queenside(row, col):
+            moves.append((row, QUEENS_ROOK_COL + 2))
+        if self.can_castle_kingside(row, col):
+            moves.append((row, KINGS_ROOK_COL - 1))
+        return moves
+
+    def get_team_pieces (self, team):
+        '''Generator for all pieces that have the given team.
+        YIELDS (piece index, piece id)'''
+        for index, piece in enumerate(self.pieces):
+            if get_piece_team(piece) == team:
+                yield (*index_to_rowcol(index), piece)
+
+    def get_team_moves (self, team) -> list:
+        '''Get all moves that a team can legally make
+        Returns a list of 4-tuples: [(from_row, from_col, to_row, to_col), ...]
+        '''
+        moves = []
+        for row, col, piece in self.get_team_pieces(team):
+            piece_moves = self.get_piece_moves(row, col)
+            for to_row, to_col in piece_moves:
+                if self.is_legal_move(team, row, col, to_row, to_col):
+                    moves.append((row, col, to_row, to_col))
+        return moves
+
+    def find_piece (self, piece):
+        '''Find the first location of a given piece type'''
+        for i, p in enumerate(self.pieces):
+            if p == piece:
+                return index_to_rowcol(i)
+
+    def has_moved (self, row, col):
+        i = rowcol_to_index(row, col)
+        return self.moved[i]
+
+    def set_moved (self, row, col, value=True):
+        i = rowcol_to_index(row, col)
+        self.moved[i] = value
+
+    def move (self, from_row, from_col, to_row, to_col):
+        piece = self.get(from_row, from_col)
+        # Check for special moves
+        if self.move_is_castling(from_row, from_col, to_row, to_col):
+            self.move_finish_castling(from_row, from_col, to_row, to_col)
+        elif self.move_is_en_passant(from_row, from_col, to_row, to_col):
+            self.move_finish_en_passant(from_row, from_col, to_row, to_col)
+        # Change the board
+        self.set_moved(from_row, from_col)
+        self.set(to_row, to_col, piece)
+        self.set(from_row, from_col, EMPTY)
+        # Log the move
+        self.history.append((from_row, from_col, to_row, to_col))
+
+    def move_is_castling (self, from_row, from_col, to_row, to_col):
+        piece = self.get(from_row, from_col)
+        if (get_piece_role(piece) == WHITE_KING
+                and (from_row == to_row == get_king_row(piece))
+                and from_col == KING_COL):
+            if to_col == QUEENS_ROOK_COL + 2:
+                return WHITE_QUEEN
+            elif to_col == KINGS_ROOK_COL - 1:
+                return WHITE_KING
+        return False
+
+    def move_finish_castling (self, from_row, from_col, to_row, to_col):
+        # Move the appropriate rook next to the king
+        from_col_rook = 7 if (to_col == 6) else 0
+        to_col_rook = 5 if (to_col == 6) else 3
+        rook = self.get(from_row, from_col_rook)
+        self.set(to_row, to_col_rook, rook)
+        self.set(from_row, from_col_rook, EMPTY)
+
+    def move_is_en_passant (self, from_row, from_col, to_row, to_col):
+        piece = self.get(from_row, from_col)
+        team = get_piece_team(piece)
+        return (get_piece_role(piece) == WHITE_PAWN
+                and from_col != to_col
+                and from_row == get_en_passant_row(team)
+                and self.get(from_row, to_col) == role_as_team(WHITE_PAWN, get_enemy_team(team)))
+
+    def move_finish_en_passant (self, from_row, from_col, to_row, to_col):
+        # Remove the captured pawn
+        self.set(from_row, to_col, EMPTY)
+
+    def is_promotable (self, row, column):
+        piece = self.get(row, column) 
+        return (get_piece_role(piece) == WHITE_PAWN
+                and row == get_king_row(get_enemy_team(get_piece_team(piece))))
+
+    def can_castle_queenside (self, row, col):
+        king = self.get(row, col)
+        return (get_piece_role(king) == WHITE_KING
+                and not self.has_moved(row, KING_COL)
+                and not self.has_moved(row, QUEENS_ROOK_COL)
+                and (EMPTY == self.get(row, 1) == self.get(row, 2) == self.get(row, 3))
+                and not self.get_piece_is_threatened(row, col))
+
+    def can_castle_kingside (self, row, col):
+        king = self.get(row, col)
+        # Checking if the king is in check should be done elsewhere
+        return (get_piece_role(king) == WHITE_KING
+                and not self.has_moved(row, KING_COL)
+                and not self.has_moved(row, KINGS_ROOK_COL)
+                and (EMPTY == self.get(row, 5) == self.get(row, 6)))
+
+    def is_legal_move (self, team, from_row, from_col, to_row, to_col):
+        piece = self.get(from_row, from_col)
+        return (get_piece_team(piece) == team
+                and (to_row, to_col) in self.get_piece_moves(from_row, from_col)
+                and not self.move_would_threaten_king(team, from_row, from_col, to_row, to_col))
+
+    def move_would_threaten_king (self, team, from_row, from_col, to_row, to_col):
+        team = get_piece_team(team)
+        simulation = self.copy()
+        simulation.move(from_row, from_col, to_row, to_col)
+        king_square = simulation.find_piece(team)
+        return simulation.get_square_is_threatened(team, *king_square)
+
+    def is_king_in_check (self, king):
+        # King is threatened
+        king = get_piece_team(king)
+        row, col = self.find_piece(king)
+        return self.get_square_is_threatened(king, row, col)
+
+    def is_king_in_mate (self, king):
+        # No moves left
+        return len(self.get_team_moves(get_piece_team(king))) == 0
+
+    def is_king_in_checkmate (self, king):
+        return self.is_king_in_check(king) and self.is_king_in_mate(king)
+
+    def is_king_in_stalemate (self, king):
+        return not self.is_king_in_check(king) and self.is_king_in_mate(king)
+
+    def is_game_over (self):
+        return (self.is_king_in_mate(BLACK_KING)
+                or self.is_king_in_mate(WHITE_KING))
+
+def is_promotable_role (role):
+    return role in (WHITE_BISHOP, WHITE_KNIGHT, WHITE_ROOK, WHITE_QUEEN)
+
+def get_en_passant_row (team):
+    return 3 if (get_piece_team(team) == WHITE_KING) else 4
+
+def get_pawn_direction (team):
+    return -1 if (team == WHITE_KING) else 1
+
+def pawn_deltas (team):
+    dir_ = get_pawn_direction(team)
+    # (delta row, delta column)
+    forward =   [dir_, 0]
+    forward_2 = [2 * dir_, 0]
+    diag_r =    [dir_, 1]
+    diag_l =    [dir_, -1]
+    return forward, forward_2, diag_r, diag_l
+
+def pawn_plus_deltas (row, col, team):
+    deltas = list(pawn_deltas(team))
+    for i, d in enumerate(deltas):
+        d[0] += row
+        d[1] += col
+        deltas[i] = tuple(deltas[i])
+    return tuple(deltas)
+
+def standard_board ():
+    board = Board()
+    return board
+
+def in_board_range (row, col):
+    return row in range(LENGTH) and col in range(LENGTH)
+
+def rowcol_to_index (row, col):
+    if in_board_range(row, col):
+        return (row * LENGTH) + col
+
+def index_to_rowcol (index):
+    if index in range(NUM_SQUARES):
+        row = index // LENGTH
+        col = index % LENGTH
+        return (row, col)
+
+def get_current_team (turn_number):
+    return WHITE_KING if (turn_number % 2 == 0) else BLACK_KING
+
+def pieces_are_enemies (piece1, piece2):
+    team1 = get_piece_team(piece1)
+    team2 = get_piece_team(piece2)
+    return is_piece(team1) and is_piece(team2) and team1 != team2
 
 def name_team (team) -> str:
     if team == WHITE_KING:
@@ -53,424 +423,79 @@ def name_role (role) -> str:
 
 def name_piece (piece) -> str:
     '''Name a piece in English'''
-    team = name_team(piece_team(piece))
-    role = name_role(piece_role(piece))
+    team = name_team(get_piece_team(piece))
+    role = name_role(get_piece_role(piece))
     if team and role:
         return team+' '+role
 
-def piece_role (piece):
+def get_piece_role (piece):
     '''Return the piece's role by converting it to the white team'''
     if WHITE_PAWN <= piece <= BLACK_KING:
         if piece > WHITE_KING:
             piece -= WHITE_KING
         return piece
-    else:
-        return None
 
-def piece_team (piece):
+def get_piece_team (piece):
     '''Return white king or black king'''
     if WHITE_PAWN <= piece <= BLACK_KING:
         if WHITE_PAWN <= piece <= WHITE_KING:
             return WHITE_KING
         else:
             return BLACK_KING
-    else:
-        return None
+
+def is_promote_piece (piece):
+    role = get_piece_role(piece)
+    return role in (WHITE_QUEEN, WHITE_BISHOP, WHITE_ROOK, WHITE_KNIGHT)
 
 def role_as_team (role, team):
     if team == WHITE_KING:
         return role
     elif team == BLACK_KING:
         return role + 6
-    else:
-        return None
 
-class Board:
-    standard = [
-            BLACK_ROOK, BLACK_KNIGHT, BLACK_BISHOP, BLACK_QUEEN, BLACK_KING, BLACK_BISHOP, BLACK_KNIGHT, BLACK_ROOK,
-            BLACK_PAWN, BLACK_PAWN, BLACK_PAWN, BLACK_PAWN, BLACK_PAWN, BLACK_PAWN, BLACK_PAWN, BLACK_PAWN,
-            EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY,
-            EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY,
-            EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY,
-            EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY,
-            WHITE_PAWN, WHITE_PAWN, WHITE_PAWN, WHITE_PAWN, WHITE_PAWN, WHITE_PAWN, WHITE_PAWN, WHITE_PAWN,
-            WHITE_ROOK, WHITE_KNIGHT, WHITE_BISHOP, WHITE_QUEEN, WHITE_KING, WHITE_BISHOP, WHITE_KNIGHT, WHITE_ROOK,
-            ]
+def list_copy (list_) -> list:
+    return [x for x in list_]
 
-    def __init__ (self, pieces=None, has_moved=None, rows=8, columns=8, turn=0):
-        self.rows = rows
-        self.columns = columns
-        self.squares = self.rows * self.columns
-        self.pieces = pieces or [x for x in self.standard]
-        self.has_moved = has_moved or [False for x in range(self.squares)]
-        self.turn = turn
+def get_king_row (piece):
+    king = get_piece_team(piece)
+    assert king is not None
+    if king == WHITE_KING:
+        return 7
+    elif king == BLACK_KING:
+        return 0 
 
-    def get_winner (self):
-        white_can_move = False
-        black_can_move = False
-        for piece, moves in self.team_moves(WHITE_KING).items():
-            if len(moves):
-                white_can_move = True
-                break
-        for piece, moves in self.team_moves(BLACK_KING).items():
-            if len(moves):
-                black_can_move = True
-                break
-        if not white_can_move:
-            return BLACK_KING
-        elif not black_can_move:
-            return WHITE_KING
-        else:
-            return None
-
-    def in_range (self, row, col):
-        return row in range(0, self.rows) and col in range(self.columns)
-
-    def rowcol_to_index (self, row, col):
-        if self.in_range(row, col):
-            return (row * self.columns) + col
-        else:
-            return None
-
-    def index_to_rowcol (self, index):
-        if index in range(self.squares):
-            row = index // 8
-            col = index % 8
-            return (row, col)
-        else:
-            return None
-
-    def set (self, row, col, piece):
-        i = self.rowcol_to_index(row, col)
-        if i is not None:
-            self.pieces[i] = piece
-        else:
-            raise ValueError('invalid row or column')
-
-    def get (self, row, col):
-        i = self.rowcol_to_index(row, col)
-        if i is not None:
-            return self.pieces[i]
-        else:
-            raise ValueError('invalid row or column')
-
-    def copy (self):
-        new = Board()
-        for index, piece in enumerate(self.pieces):
-            new.pieces[index] = piece
-        return new
-
-    def piece_is_threatened (self, row, col, empty_team=None):
-        threats = self.piece_threat_list(row, col, empty_team)
-        return len(threats) > 0
-
-    def piece_threat_list (self, row, col, empty_team=None):
-        '''Return a list of enemy pieces that threaten the given piece'''
-        piece = self.get(row, col)
-        result = []
-        for i in range(self.squares):
-            other_row, other_col = self.index_to_rowcol(i)
-            if self.piece_is_threatened_by(row, col, other_row, other_col, empty_team):
-                result.append((other_row, other_col))
-        return result
-
-    def piece_is_threatened_by (self, row, col, by_row, by_col, empty_team=None):
-        piece = self.get(row, col)
-        other = self.get(by_row, by_col)
-        team_empty_threat = (empty_team is not None) and (other != EMPTY) and piece_team(other) != empty_team
-        if pieces_are_enemies(piece, other) or team_empty_threat:
-            return (row, col) in self.piece_moves(by_row, by_col)
-        else:
-            return False
-
-    def empty_or_enemy (self, piece, row, col):
-        return (self.get(row, col) == EMPTY) or pieces_are_enemies(piece, self.get(row, col))
-
-    def piece_moves (self, row, col) -> list:
-        role = piece_role(self.get(row, col))
-        if role == WHITE_PAWN:
-            return self.pawn_moves(row, col)
-        elif role == WHITE_BISHOP:
-            return self.bishop_moves(row, col)
-        elif role == WHITE_KNIGHT:
-            return self.knight_moves(row, col)
-        elif role == WHITE_ROOK:
-            return self.rook_moves(row, col)
-        elif role == WHITE_QUEEN:
-            return self.queen_moves(row, col)
-        elif role == WHITE_KING:
-            return self.king_moves(row, col)
-        else:
-            return []
-
-    def pawn_moves (self, row, col):
-        moves = []
-        piece = self.get(row, col)
-        forward, forward_2, diag_r, diag_l = pawn_plus_deltas(row, col, piece_team(piece))
-        # Moving forward 1 and 2 spaces
-        if self.in_range(*forward) and self.get(*forward) == EMPTY:
-            moves.append(forward)
-            # First move can be 2 spaces too
-            if row in (1, 6) and self.in_range(*forward_2) and self.get(*forward_2) == EMPTY:
-                moves.append(forward_2)
-        # Capturing diagonals
-        for diag in (diag_r, diag_l):
-            if self.in_range(*diag) and pieces_are_enemies(piece, self.get(*diag)):
-                moves.append(diag)
-        return moves
-
-    def bishop_moves (self, row, col):
-        moves = []
-        for drow in (-1, 1):
-            for dcol in (-1, 1):
-                new_row = row + drow
-                new_col = col + dcol
-                while self.in_range(new_row, new_col) and self.get(new_row, new_col) == EMPTY:
-                    moves.append((new_row, new_col))
-                    new_row += drow
-                    new_col += dcol
-                # The very last square traversed can be a capture
-                piece = self.get(row, col)
-                if self.in_range(new_row, new_col) and pieces_are_enemies(piece, self.get(new_row, new_col)):
-                    moves.append((new_row, new_col))
-        return moves
-
-    def knight_moves (self, row, col):
-        leaping_deltas = [(-1, -2), (1, -2), (-1, 2), (1, 2), (2, -1), (2, 1), (-2, -1), (-2, 1)]
-        moves = []
-        piece = self.get(row, col)
-        for drow, dcol in leaping_deltas:
-            new_row = row + drow
-            new_col = col + dcol
-            if self.in_range(new_row, new_col) and self.empty_or_enemy(piece, new_row, new_col):
-                moves.append((new_row, new_col))
-        return moves
-
-    def rook_moves (self, row, col):
-        moves = []
-        for drow, dcol in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-            new_row = row + drow
-            new_col = col + dcol
-            while self.in_range(new_row, new_col) and self.get(new_row, new_col) == EMPTY:
-                moves.append((new_row, new_col))
-                new_row += drow
-                new_col += dcol
-            # The very last square traversed can be a capture
-            piece = self.get(row, col)
-            if self.in_range(new_row, new_col) and self.empty_or_enemy(piece, new_row, new_col):
-                moves.append((new_row, new_col))
-        return moves
-
-    def queen_moves (self, row, col):
-        rook = self.rook_moves(row, col)
-        bishop = self.bishop_moves(row, col)
-        return rook + bishop
-
-    def king_moves (self, row, col):
-        moves = []
-        piece = self.get(row, col)
-        for drow in (-1, 0, 1):
-            for dcol in (-1, 0, 1):
-                if drow == 0 and dcol == 0:
-                    continue
-                new_row = row + drow
-                new_col = col + dcol
-                if self.in_range(new_row, new_col) and self.empty_or_enemy(piece, new_row, new_col):
-                    moves.append((new_row, new_col))
-        return moves
-
-    def white_pieces (self):
-        for x in self.team_pieces(WHITE_KING):
-            yield x
-
-    def black_pieces (self):
-        for x in self.team_pieces(BLACK_KING):
-            yield x
-
-    def team_pieces (self, team):
-        '''Generator for all pieces that have the given team.
-        YIELDS (piece index, piece id)'''
-        for index, piece in enumerate(self.pieces):
-            if piece_team(piece) == team:
-                yield self.index_to_rowcol(index), piece
-
-    def team_moves (self, team):
-        '''Get all moves that a team can make, including not allowing
-        moves that put the King in Check'''
-        all_moves = dict()
-        for (row, col), piece in self.team_pieces(team):
-            no_threat = lambda to_rowcol: not self.move_would_threaten_king(row, col, *to_rowcol, team)
-            moves = filter(no_threat, self.piece_moves(row, col))
-            all_moves[(row, col)] = list(moves)
-        return all_moves
-
-    def move_would_threaten_king (self, from_row, from_col, to_row, to_col, team):
-        simulation_board = self.copy()
-        simulation_board.move(from_row, from_col, to_row, to_col)
-        return simulation_board.king_is_in_check(team)
-
-    def white_moves (self):
-        return self.team_moves(WHITE_KING)
-
-    def black_moves (self):
-        return self.team_moves(BLACK_KING)
-
-    def find_piece (self, piece):
-        for i, p in enumerate(self.pieces):
-            if p == piece:
-                return self.index_to_rowcol(i)
-
-    def find_pieces (self, piece):
-        found = []
-        for i, p in enumerate(self.pieces):
-            if p == piece:
-                found.append(self.index_to_rowcol(i))
-        return tuple(found)
-
-    def king_is_in_check (self, king):
-        king_row, king_col = self.find_piece(king)
-        return self.piece_is_threatened(king_row, king_col)
-
-    def move (self, from_row, from_col, to_row, to_col):
-        i = self.rowcol_to_index(from_row, from_col)
-        self.has_moved[i] = True
-        self.set(to_row, to_col, self.get(from_row, from_col))
-        self.set(from_row, from_col, EMPTY)
-
-    def is_promotable (self, row, column):
-        piece = self.get(row, column) 
-        if piece != EMPTY:
-            team = piece_team(piece)
-            role = piece_role(piece)
-            if role == WHITE_PAWN:
-                if team == WHITE_KING:
-                    return row == 0
-                elif team == BLACK_KING:
-                    return row == 7
-            else:
-                return False
-        else:
-            return False
-
-    def can_promote (self, row, column, to_role):
-        valid_role = to_role in (WHITE_QUEEN, WHITE_BISHOP, WHITE_ROOK, WHITE_KNIGHT)
-        return self.is_promotable(row, column) and valid_role
-
-    def promote (self, team, row, column, to_role):
-        # For when you want to promote a pawn
-        self.set(row, column, role_as_team(to_role, team))
-
-    def is_king_moved (self, king):
-        if king == WHITE_KING:
-            king_i = self.rowcol_to_index(7, 4)
-        elif king == BLACK_KING:
-            king_i = self.rowcol_to_index(0, 4)
-        else:
-            raise ValueError(str(king))
-        return self.has_moved[king_i]
-
-    def can_queenside_castle (self, king):
-        assert king in (BLACK_KING, WHITE_KING)
-        if king == WHITE_KING:
-            rook_i = self.rowcol_to_index(7, 0)
-            empty1_i = (7, 1)
-            empty2_i = (7, 2)
-            empty3_i = (7, 3)
-        elif king == BLACK_KING:
-            rook_i = self.rowcol_to_index(0, 0)
-            empty1_i = (0, 1)
-            empty2_i = (0, 2)
-            empty3_i = (0, 3)
-        empty1 = self.get(*empty1_i)
-        empty2 = self.get(*empty2_i)
-        empty3 = self.get(*empty3_i)
-        king_moved = self.is_king_moved(king)
-        rook_moved = self.has_moved[rook_i]
-        is_clear = (empty1 == EMPTY) and (empty2 == EMPTY) and (empty3 == EMPTY)
-        in_check = self.king_is_in_check(king)
-        will_check = self.piece_is_threatened(*empty3_i, empty_team=king) or self.piece_is_threatened(*empty2_i, empty_team=king)
-        return (not in_check) and (not will_check) and is_clear and (not king_moved) and (not rook_moved)
-
-    def move_queenside_castle (self, king):
-        assert king in (WHITE_KING, BLACK_KING)
-        row, king_col = self.find_piece(king)
-        rook_col = 0
-        self.move(row, king_col, row, 2)
-        self.move(row, rook_col, row, 3)
-
-    def can_kingside_castle (self, king):
-        assert king in (WHITE_KING, BLACK_KING) 
-        if king == WHITE_KING:
-            rook_i = self.rowcol_to_index(7, 7)
-            empty1_i = (7, 6)
-            empty2_i = (7, 5)
-        elif king == BLACK_KING:
-            rook_i = self.rowcol_to_index(0, 7)
-            empty1_i = (0, 6)
-            empty2_i = (0, 5)
-
-        empty1 = self.get(*empty1_i)
-        empty2 = self.get(*empty2_i)
-        king_moved = self.is_king_moved(king)
-        rook_moved = self.has_moved[rook_i]
-        is_clear = (empty1 == EMPTY) and (empty2 == EMPTY)
-        in_check = self.king_is_in_check(king)
-        will_check = self.piece_is_threatened(*empty1_i, empty_team=king) or self.piece_is_threatened(*empty2_i, empty_team=king)
-        return (not in_check) and (not will_check) and is_clear and (not king_moved) and (not rook_moved)
-
-    def move_kingside_castle (self, king):
-        assert king in (WHITE_KING, BLACK_KING)
-        row, king_col = self.find_piece(king)
-        rook_col = 7
-        self.move(row, king_col, row, 6)
-        self.move(row, rook_col, row, 5)
-
-    def is_legal_move (self, team, from_row, from_col, to_row, to_col):
-        # TODO: pre-calculate legal moves every time a real move is made
-        # This calculates all moves available currently
-        all_moves = self.team_moves(team)
-        the_piece_moves = all_moves.get((from_row, from_col))
-        if the_piece_moves:
-            return (to_row, to_col) in the_piece_moves
-        else:
-            return False
-
-def is_promotable_role (role):
-    return role in (WHITE_BISHOP, WHITE_KNIGHT, WHITE_ROOK, WHITE_QUEEN)
-
-def pawn_deltas (team):
-    # White team initial values
-    # (delta row, delta column)
-    forward = [1, 0]
-    forward_2 = [2, 0]
-    diag_r = [1, 1]
-    diag_l = [1, -1]
+def get_enemy_team (team):
     if team == WHITE_KING:
-        forward[0] *= -1
-        forward_2[0] *= -1
-        diag_r[0] *= -1
-        diag_l[0] *= -1
-    return forward, forward_2, diag_r, diag_l
+        return BLACK_KING
+    elif team == BLACK_KING:
+        return WHITE_KING
 
-def pawn_plus_deltas (row, col, team):
-    deltas = list(pawn_deltas(team))
-    for i, d in enumerate(deltas):
-        d[0] += row
-        d[1] += col
-        deltas[i] = tuple(deltas[i])
-    return tuple(deltas)
+def is_piece (x):
+    return x in range(1, 13)
 
-def standard_board ():
-    board = Board()
-    return board
+if __name__ == '__main__':
+    assert not is_piece(False)
+    assert not is_piece(None)
+    assert not is_piece(EMPTY)
 
-def square_is_white (row, col):
-    row %= 2
-    col %= 2
-    return (row and col) or not (row or col) 
+    assert is_piece(True)
+    assert is_piece(WHITE_PAWN)
+    assert is_piece(WHITE_BISHOP)
+    assert is_piece(WHITE_KNIGHT)
+    assert is_piece(WHITE_ROOK)
+    assert is_piece(WHITE_QUEEN)
+    assert is_piece(WHITE_KING)
+    assert is_piece(BLACK_PAWN)
+    assert is_piece(BLACK_BISHOP)
+    assert is_piece(BLACK_KNIGHT)
+    assert is_piece(BLACK_ROOK)
+    assert is_piece(BLACK_QUEEN)
+    assert is_piece(BLACK_KING)
 
-def name_square (row, col):
-    max_rows = 8
-    letter = 'ABCDEFGH'[col]
-    return letter + str(max_rows - row)
+    x = WHITE_KING
+    assert get_enemy_team(get_enemy_team(x)) == x
 
+    test = Board()
+    moves = test.get_team_moves(WHITE_KING)
+    print(len(moves))
+    print(moves)
