@@ -294,7 +294,8 @@ class Board:
 
     def move_finish_en_passant (self, from_row, from_col, to_row, to_col):
         # Remove the captured pawn
-        self.set(from_row, to_col, EMPTY)
+        row, col = get_en_passant_capture(from_row, from_col, to_row, to_col)
+        self.set(row, col, EMPTY)
 
     def is_promotable (self, row, column):
         piece = self.get(row, column) 
@@ -349,6 +350,12 @@ class Board:
     def is_game_over (self):
         return (self.is_king_in_mate(BLACK_KING)
                 or self.is_king_in_mate(WHITE_KING))
+
+    def get_winner (self):
+        if self.is_king_in_checkmate(BLACK_KING):
+            return WHITE_KING
+        elif self.is_king_in_checkmate(WHITE_KING):
+            return BLACK_KING
 
 def is_promotable_role (role):
     return role in (WHITE_BISHOP, WHITE_KNIGHT, WHITE_ROOK, WHITE_QUEEN)
@@ -472,6 +479,9 @@ def get_enemy_team (team):
 
 def is_piece (x):
     return x in range(1, 13)
+
+def get_en_passant_capture (from_row, from_col, to_row, to_col):
+    return (from_row, to_col)
 
 if __name__ == '__main__':
     assert not is_piece(False)
