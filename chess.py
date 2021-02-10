@@ -37,22 +37,25 @@ QUEENS_ROOK_COL = 0
 KINGS_ROOK_COL = 7
 KING_COL = 4
 
+# (General utility function not specifically for chess)
+def list_copy (list_) -> list:
+    return [x for x in list_]
+
 class Board:
 
-    def __init__ (self, pieces=None, moved=None, history=None):
+    def __init__ (self, pieces=None, history=None, move_num=0):
         # These lists should be a COPY of the prototypes so that they don't modify the input
         # lists!
         if pieces is None:
             self.pieces = list_copy(STANDARD_BOARD)
         else:
-            self.pieces = list_copy(pieces)
-
-        if moved is None:
-            self.moved =  [False for x in range(NUM_SQUARES)]
-        else:
-            self.moved = list_copy(moved)
-
+            self.pieces = list_copy(pieces) 
         self.history = list_copy(history) if history else []
+        self.move_num = move_num
+
+    def get_current_team (self):
+        # Call the global function that is defined elsewhere
+        return get_current_team(self.move_num)
 
     def set (self, row, col, piece):
         i = rowcol_to_index(row, col)
@@ -72,7 +75,7 @@ class Board:
             raise ValueError('invalid row or column')
 
     def copy (self):
-        return Board(self.pieces, self.moved, self.history)
+        return Board(self.pieces, self.history, self.move_num)
 
     def get_piece_is_threatened (self, row, col):
         team = get_piece_team(self.get(row, col))
@@ -137,7 +140,8 @@ class Board:
         moves = self.get_pawn_moves(row, col)
         piece = self.get(row, col)
         if row == get_en_passant_row(piece):
-            last_r1, last_c1, last_r2, last_c2 = self.history[-1]
+            # History slice ignores the unnecessary data (target, is_en_passant, is_castling)
+            last_r1, last_c1, last_r2, last_c2 = self.history[-1][:4]
             last_piece = self.get(last_r2, last_c2)
             if get_piece_role(last_piece) == WHITE_PAWN:
                 last_change_row = abs(last_r2 - last_r1)
@@ -237,33 +241,61 @@ class Board:
                     moves.append((row, col, to_row, to_col))
         return moves
 
+    def get_current_moves (self):
+        return self.get_team_moves(self.get_current_team())
+
     def find_piece (self, piece):
         '''Find the first location of a given piece type'''
         for i, p in enumerate(self.pieces):
             if p == piece:
                 return index_to_rowcol(i)
 
-    def has_moved (self, row, col):
-        i = rowcol_to_index(row, col)
-        return self.moved[i]
-
-    def set_moved (self, row, col, value=True):
-        i = rowcol_to_index(row, col)
-        self.moved[i] = value
-
     def move (self, from_row, from_col, to_row, to_col):
         piece = self.get(from_row, from_col)
-        # Check for special moves
-        if self.move_is_castling(from_row, from_col, to_row, to_col):
-            self.move_finish_castling(from_row, from_col, to_row, to_col)
-        elif self.move_is_en_passant(from_row, from_col, to_row, to_col):
-            self.move_finish_en_passant(from_row, from_col, to_row, to_col)
-        # Change the board
-        self.set_moved(from_row, from_col)
         self.set(to_row, to_col, piece)
         self.set(from_row, from_col, EMPTY)
+
+    def make_move (self, from_row, from_col, to_row, to_col):
+        # Check for special moves
+        is_castling = is_en_passant = False
+        if self.move_is_castling(from_row, from_col, to_row, to_col): 
+            is_castling = True
+            self.move_finish_castling(from_row, from_col, to_row, to_col)
+        elif self.move_is_en_passant(from_row, from_col, to_row, to_col):
+            is_en_passant = True
+            self.move_finish_en_passant(from_row, from_col, to_row, to_col)
+        # Change the board with the move
+        target = self.get(to_row, to_col)
+        self.move(from_row, from_col, to_row, to_col)
         # Log the move
-        self.history.append((from_row, from_col, to_row, to_col))
+        self.history.append((from_row, from_col, to_row, to_col, target, is_castling, is_en_passant))
+        # Increment counter
+        self.move_num += 1
+
+    def has_moved (self, row, col):
+        for move in self.history:
+            from_row, from_col = move[:2]
+            if row == from_row and col == from_col:
+                return True
+        return False
+
+    def undo_move (self):
+        last_move = self.history.pop(-1)
+        from_row, from_col, to_row, to_col, target, is_castling, is_en_passant = last_move
+        self.move(to_row, to_col, from_row, from_col)
+        self.set(to_row, to_col, target)
+        if is_en_passant:
+            # Restore the captured pawn
+            captured_pawn_row = from_row
+            captured_pawn_col = to_col
+            captured_pawn = WHITE_PAWN if (get_piece_team(self.get(from_row, from_col)) == BLACK_KING) else BLACK_PAWN
+            self.set(captured_pawn_row, captured_pawn_col, captured_pawn)
+        elif is_castling:
+            # Move the castle back
+            rook_from_col, rook_to_col = get_rook_castle_cols(to_col)
+            self.move(to_row, rook_to_col, from_row, rook_from_col)
+        # Do this last because other methods could potentially rely on self's current team state
+        self.move_num -= 1
 
     def move_is_castling (self, from_row, from_col, to_row, to_col):
         piece = self.get(from_row, from_col)
@@ -278,8 +310,7 @@ class Board:
 
     def move_finish_castling (self, from_row, from_col, to_row, to_col):
         # Move the appropriate rook next to the king
-        from_col_rook = 7 if (to_col == 6) else 0
-        to_col_rook = 5 if (to_col == 6) else 3
+        from_col_rook, to_col_rook = get_rook_castle_cols(to_col)
         rook = self.get(from_row, from_col_rook)
         self.set(to_row, to_col_rook, rook)
         self.set(from_row, from_col_rook, EMPTY)
@@ -326,30 +357,31 @@ class Board:
 
     def move_would_threaten_king (self, team, from_row, from_col, to_row, to_col):
         team = get_piece_team(team)
-        simulation = self.copy()
-        simulation.move(from_row, from_col, to_row, to_col)
-        king_square = simulation.find_piece(team)
-        return simulation.get_square_is_threatened(team, *king_square)
+        sim = self.copy()
+        sim.make_move(from_row, from_col, to_row, to_col)
+        if sim.find_piece(team):
+            return sim.is_king_in_check(team)
+        else:
+            return True
 
     def is_king_in_check (self, king):
-        # King is threatened
         king = get_piece_team(king)
         row, col = self.find_piece(king)
         return self.get_square_is_threatened(king, row, col)
 
-    def is_king_in_mate (self, king):
-        # No moves left
-        return len(self.get_team_moves(get_piece_team(king))) == 0
+    def can_team_move (self, king):
+        moves = self.get_team_moves(get_piece_team(king))
+        return len(moves) > 0
 
     def is_king_in_checkmate (self, king):
-        return self.is_king_in_check(king) and self.is_king_in_mate(king)
+        return self.is_king_in_check(king) and not self.can_team_move(king)
 
     def is_king_in_stalemate (self, king):
-        return not self.is_king_in_check(king) and self.is_king_in_mate(king)
+        return not self.is_king_in_check(king) and not self.can_team_move(king)
 
     def is_game_over (self):
-        return (self.is_king_in_mate(BLACK_KING)
-                or self.is_king_in_mate(WHITE_KING))
+        return ((not self.can_team_move(BLACK_KING))
+                or (not self.can_team_move(WHITE_KING)))
 
     def get_winner (self):
         if self.is_king_in_checkmate(BLACK_KING):
@@ -460,9 +492,6 @@ def role_as_team (role, team):
     elif team == BLACK_KING:
         return role + 6
 
-def list_copy (list_) -> list:
-    return [x for x in list_]
-
 def get_king_row (piece):
     king = get_piece_team(piece)
     assert king is not None
@@ -482,6 +511,11 @@ def is_piece (x):
 
 def get_en_passant_capture (from_row, from_col, to_row, to_col):
     return (from_row, to_col)
+
+def get_rook_castle_cols (king_move_to_col): 
+    from_col_rook = 7 if (king_move_to_col == 6) else 0
+    to_col_rook = 5 if (king_move_to_col == 6) else 3
+    return from_col_rook, to_col_rook
 
 if __name__ == '__main__':
     assert not is_piece(False)
