@@ -39,45 +39,16 @@ class Game:
     def __init__ (self, screen, spritesheet):
         self.screen = screen
         self.spritesheet = spritesheet
-        self.clock = pygame.time.Clock()
         self.running = True
         self.state = 'menu'
+        self.valid_states = ('menu', 'transition', 'play', 'wait', 'move', 'promote', 'queenside castle',
+                'kingside castle', 'mate', 'resign', 'choose team')
         self.init_sounds()
-        self.init_menu()
+        self.enter_state(self.state)
 
-    def init_menu (self):
-        self.background = MENU_BACKGROUND
-        self.num_players = None
-        self.show_option_0 = False
-        self.trigger_option_0_rect = pygame.Rect(72, 224, 8, 8)
-        self.option_0_rect = pygame.Rect(96, 120, 64, 8)
-        self.option_1_rect = pygame.Rect(96, 136, 64, 8)
-        self.option_2_rect = pygame.Rect(96, 152, 64, 8)
-        self.cursor_y = 256
-
-    def init_transition (self): 
-        self.transition_timer = 90
-        self.state = 'transition'
-        self.background = TRANSITION_BACKGROUND
-
-    def set_game (self): 
-        self.background = GAME_BACKGROUND
-        self.state = 'play'
-
-    def init_game (self):
-        self.init_movement()
-        self.init_chess()
-        self.init_timers()
-        self.init_capturing_area()
-        self.init_pieces()
-        self.highlight_sprites = []
-        self.init_message()
-        if self.num_players == 1:
-            self.enter_game_state('choose team')
-        else:
-            if self.num_players == 0:
-                self.black_is_ai = self.white_is_ai = True
-            self.enter_game_state('wait')
+    def is_play_state (self, state):
+        return state in ('play', 'wait', 'move', 'promote', 'queenside castle',
+                'kingside castle', 'mate', 'castle the rook', 'resign', 'choose team')
 
     def init_chess (self): 
         self.chess_board = chess.Game()
@@ -89,67 +60,61 @@ class Game:
         self.message_sprites = []
         self.update_message()
     
-    def update_message (self):
+    def get_message (self):
         is_white = self.chess_board.get_current_team() == chess.WHITE_KING
-        state = self.game_state
+        state = self.state
         if state == 'choose team':
-            message = 'select a team to lead' 
+            return 'select the pieces to lead' 
         elif state == 'promote':
             if is_white:
-                message = 'white# pawn promotion'
+                return 'white# pawn promotion'
             else:
-                message = 'black$ pawn promotion'
+                return 'black$ pawn promotion'
         elif state == 'mate':
-            winner = self.chess_board.get_winner()
+            winner = self.chess_winner
             if winner == chess.WHITE_KING:
-                message = 'white# checkmates black$!'
+                return 'white# checkmates black$!'
             elif winner == chess.BLACK_KING:
-                message = 'black$ checkmates white#!'
+                return 'black$ checkmates white#!'
             else:
                 if self.chess_board.is_king_in_stalemate(chess.WHITE_KING):
-                    message = 'white# is in stalemate'
+                    return 'white# is in stalemate'
                 elif self.chess_board.is_king_in_stalemate(chess.BLACK_KING):
-                    message = 'black$ is in stalemate'
+                    return 'black$ is in stalemate'
                 else:
-                    message = 'confused'
+                    return 'game ended'
         elif state == 'wait':
             if is_white:
                 if self.chess_board.is_king_in_check(chess.WHITE_KING):
-                    message = 'white# is in check'
+                    return 'white# is in check'
                 elif self.chess_board.move_num == 0:
-                    message = 'white# to make 1st move'
+                    return 'white# to make 1st move'
                 else:
-                    message = 'white# to move'
+                    return 'white# to move'
             else:
                 if self.chess_board.is_king_in_check(chess.BLACK_KING):
-                    message = 'black$ is in check'
+                    return 'black$ is in check'
                 else:
-                    message = 'black$ to move'
-        else:
-            message = self.message
+                    return 'black$ to move'
 
+    def update_message (self):
+        message = self.get_message() 
         if message != self.message:
             self.message = message
-            self.message_sprites = []
-            for i, char in enumerate(self.message):
-                tile = char_to_tile(char)
-                s = Sprite(tile, MESSAGE_X + i * 8, MESSAGE_Y, 1)
-                self.message_sprites.append(s)
+            self.create_message_sprites()
+
+    def create_message_sprites (self):
+        self.message_sprites = []
+        for i, char in enumerate(self.message):
+            tile = char_to_tile(char)
+            s = Sprite(tile, MESSAGE_X + i * 8, MESSAGE_Y, 1)
+            self.message_sprites.append(s)
 
     def init_sounds (self):
-        s = lambda name: pygame.mixer.Sound(os.path.join('sound', name))
-        self.sounds = {
-                'check': s('check.wav'),
-                'checkmate': s('checkmate.wav'),
-                'error': s('error.wav'),
-                'move': s('move.wav'),
-                'promote': s('promote.wav'),
-                'can promote': s('can promote.wav'),
-                'capture': s('capture.wav'),
-                'castle': s('castle.wav'),
-                'resign': s('resign.wav'),
-                'reveal': s('reveal.wav')
-                }
+        names = ['check', 'checkmate', 'error', 'move', 'promote', 'can promote',
+                'capture', 'castle', 'resign', 'reveal']
+        sound = lambda name: pygame.mixer.Sound(os.path.join('sound', name))
+        self.sounds = {name: sound(name + '.wav') for name in names}
 
     def play_sound (self, name):
         self.sounds[name].play()
@@ -167,8 +132,6 @@ class Game:
         self.white_jail_x, self.white_jail_y = JAIL_START_X, WHITE_JAIL_Y
 
     def init_movement (self): 
-        # State:
-        self.game_state = None
         # Input
         self.input_x = None
         self.input_y = None
@@ -182,11 +145,38 @@ class Game:
         self.moving_dx = None
         self.moving_dy = None
 
-    def enter_game_state (self, state):
-        valid_states = ('wait', 'move', 'promote', 'queenside castle',
-                'kingside castle', 'mate', 'castle the rook', 'resign', 'choose team')
-        assert state in valid_states
-        if state == 'choose team':
+    def enter_state (self, state):
+        assert state in self.valid_states
+        self.state = state
+        if state == 'menu':
+            self.background = MENU_BACKGROUND
+            self.num_players = None
+            self.show_option_0 = False
+            self.trigger_option_0_rect = pygame.Rect(72, 224, 8, 8)
+            self.option_0_rect = pygame.Rect(96, 120, 64, 8)
+            self.option_1_rect = pygame.Rect(96, 136, 64, 8)
+            self.option_2_rect = pygame.Rect(96, 152, 64, 8)
+            self.cursor_y = 256 
+        elif state == 'transition': 
+            self.transition_timer = 90
+            self.state = 'transition'
+            self.background = TRANSITION_BACKGROUND
+            self.init_movement()
+            self.init_chess()
+            self.init_timers()
+            self.init_capturing_area()
+            self.init_pieces()
+            self.highlight_sprites = []
+            self.init_message()
+        elif state == 'play':
+            self.background = GAME_BACKGROUND
+            if self.num_players == 1:
+                self.enter_state('choose team')
+            else:
+                if self.num_players == 0:
+                    self.black_is_ai = self.white_is_ai = True
+                self.enter_state('wait')
+        elif state == 'choose team':
             self.selected_sprite = None
             self.selected_start = None
             self.selected_end = None
@@ -196,7 +186,7 @@ class Game:
             self.input_is_fresh = False
             self.input_x = self.input_y = None
             self.highlight_sprites = [] 
-
+            self.update_message() 
         elif state == 'wait':
             # Check for Check here
             self.selected_sprite = None
@@ -209,10 +199,11 @@ class Game:
             self.input_x = self.input_y = None
             self.highlight_sprites = []
             # Check for Checkmate
+            if self.chess_board.is_king_in_check(self.chess_board.get_current_team()):
+                self.play_sound('check')
             if self.chess_board.is_game_over():
-                self.enter_game_state('mate')
-                self.game_state = 'mate'
-                return # don't increase the turn counter
+                self.enter_state('mate')
+                self.state = 'mate'
             else:
                 # AI moves
                 team = self.chess_board.get_current_team()
@@ -222,7 +213,7 @@ class Game:
                     self.selected_start = row, col
                     self.selected_end = to_row, to_col 
                     self.selected_sprite = self.get_sprite_at(*self.selected_start)
-
+            self.update_message()
         elif state == 'move':
             assert self.selected_sprite and self.selected_start and self.selected_end
             start_x, start_y = board_to_screen(*self.selected_start)
@@ -233,10 +224,9 @@ class Game:
 
         elif state == 'promote':
             assert self.selected_sprite and self.selected_start and self.selected_end 
-
+            self.update_message() 
         elif state in ('queenside castle', 'kingside castle'):
-            assert self.selected_sprite and self.selected_start and self.selected_end
-
+            assert self.selected_sprite and self.selected_start and self.selected_end 
             team = chess.get_current_team(self.chess_board.move_num)
             king_square = self.chess_board.find_piece(team)
             can_castle = (
@@ -249,50 +239,19 @@ class Game:
                 self.moving_steps = 4
                 self.moving_dx = (end_x - start_x) // self.moving_steps
                 self.moving_dy = (end_y - start_y) // self.moving_steps
+                self.castle_state = 'king'
             else:
                 self.play_sound('error')
-                self.enter_game_state('wait')
-
-        elif state ==  'castle the rook':
-            self.previous_castle_state = self.game_state
-            assert self.previous_castle_state in ('queenside castle', 'kingside castle')
-
-            if chess.get_current_team(self.chess_board.move_num) == chess.BLACK_KING:
-                row = 0
-            else:
-                row = 7
-
-            # Now is when the chess board data is updated during castling
-            # self.chess_board.make_move(*self.selected_start, *self.selected_end)
-
-            if self.previous_castle_state == 'kingside castle':
-                self.selected_start = (row, 7)
-                self.selected_end = (row, 5)
-            elif self.previous_castle_state == 'queenside castle':
-                self.selected_start = (row, 0)
-                self.selected_end = (row, 3)
-            self.selected_sprite = self.get_sprite_at(*self.selected_start)
-
-            start_x, start_y = board_to_screen(*self.selected_start)
-            end_x, end_y = board_to_screen(*self.selected_end)
-            self.moving_steps = 4
-            self.moving_dx = (end_x - start_x) // self.moving_steps
-            self.moving_dy = (end_y - start_y) // self.moving_steps
-
+                self.enter_state('wait') 
         elif state == 'mate':
-            self.sound_delay = 16
-
+            self.sound_delay = 16 
+            self.update_message()
         elif state == 'resign':
             self.move_steps = 32
-            self.play_sound('resign')
-
+            self.play_sound('resign') 
         else:
-            # If this point is reached, I made a typo in the above
-            # if-statements
-            raise SyntaxError()
-
-        self.game_state = state
-        self.update_message()
+            # If this point is reached, I made a typo in the above if-statements
+            raise SyntaxError() 
 
     def init_pieces (self):
         self.pieces = []
@@ -313,7 +272,7 @@ class Game:
             self.running = False
         elif event.type == pygame.MOUSEBUTTONDOWN:
             x, y = event.pos[0] // SCALE, event.pos[1] // SCALE
-            if self.state == 'play':
+            if self.state == 'wait':
                 self.input_x = x
                 self.input_y = y
                 self.input_is_fresh = True
@@ -331,12 +290,7 @@ class Game:
                 elif self.option_2_rect.collidepoint(xy):
                     self.num_players = 2
                 if self.num_players is not None:
-                    self.init_game()
-                    self.init_transition()
-            elif self.state == 'transition':
-                pass
-            else:
-                raise SyntaxError('bad state')
+                    self.enter_state('transition')
         elif event.type == pygame.MOUSEMOTION:
             x, y = event.pos[0] // SCALE, event.pos[1] // SCALE
             if self.state == 'menu':
@@ -372,37 +326,26 @@ class Game:
                 self.black_jail_x = JAIL_START_X
                 self.black_jail_y -= 16
 
-    def update (self):
-        self.clock.tick(FPS)
-        if self.state == 'menu':
-            pass
-        elif self.state == 'play':
-            self.update_game()
-        elif self.state == 'transition':
-            if self.transition_timer > 0:
-                self.transition_timer -= 1
-            else:
-                self.set_game()
-
     def update_timers (self): 
-        # Don't update the timer until white has moved first
-        if self.chess_board.move_num > 0 and self.game_state != 'mate':
-            if chess.get_current_team(self.chess_board.move_num) == chess.BLACK_KING:
-                self.black_ticks += 1
-                if self.black_ticks >= FPS:
-                    self.black_ticks = 0
-                    self.black_seconds += 1
-                    if self.black_seconds >= 60:
-                        self.black_seconds = 0
-                        self.black_minutes += 1
-            else:
-                self.white_ticks += 1
-                if self.white_ticks >= FPS:
-                    self.white_ticks = 0
-                    self.white_seconds += 1
-                    if self.white_seconds >= 60:
-                        self.white_seconds = 0
-                        self.white_minutes += 1
+        if self.chess_board.move_num == 0:
+            # Don't time before the first move is made by white
+            return
+        elif chess.get_current_team(self.chess_board.move_num) == chess.BLACK_KING:
+            self.black_ticks += 1
+            if self.black_ticks >= FPS:
+                self.black_ticks = 0
+                self.black_seconds += 1
+                if self.black_seconds >= 60:
+                    self.black_seconds = 0
+                    self.black_minutes += 1
+        else:
+            self.white_ticks += 1
+            if self.white_ticks >= FPS:
+                self.white_ticks = 0
+                self.white_seconds += 1
+                if self.white_seconds >= 60:
+                    self.white_seconds = 0
+                    self.white_minutes += 1
 
     def update_game_choose (self):
         assert self.num_players == 1
@@ -419,11 +362,11 @@ class Game:
                     else:
                         self.white_is_ai = False
                         self.black_is_ai = True
-                    self.enter_game_state('wait')
-
+                    self.enter_state('wait') 
 
     def update_game_wait (self): 
         # Validate selection of pieces and moves
+        self.update_timers()
         if self.input_is_fresh:
             self.input_is_fresh = False
             rowcol = screen_to_board(self.input_x, self.input_y)
@@ -439,10 +382,10 @@ class Game:
                         self.selected_end = rowcol
                     else:
                         self.play_sound('error')
-                        self.enter_game_state('wait')
+                        self.enter_state('wait')
             else:
                 # Clicking off of the board --> deselect everything
-                self.enter_game_state('wait')
+                self.enter_state('wait')
         if self.selected_start:
             if self.selected_end:
                 # Validate start of selection
@@ -453,14 +396,14 @@ class Game:
                 if is_legal_move:
                     castle = self.chess_board.move_is_castling(*self.selected_start, *self.selected_end)
                     if castle == chess.WHITE_QUEEN: 
-                        self.enter_game_state('queenside castle')
+                        self.enter_state('queenside castle')
                     elif castle == chess.WHITE_KING:
-                        self.enter_game_state('kingside castle')
+                        self.enter_state('kingside castle')
                     else:
-                        self.enter_game_state('move')
+                        self.enter_state('move')
                 else:
                     self.play_sound('error')
-                    self.enter_game_state('wait')
+                    self.enter_state('wait')
 
     def update_game_move (self):
         assert self.selected_sprite and self.selected_start and self.selected_end
@@ -486,17 +429,15 @@ class Game:
             self.chess_board.make_move(*self.selected_start, *self.selected_end)
             if self.chess_board.is_promotable(*self.selected_end):
                 self.play_sound('can promote')
-                self.enter_game_state('promote')
+                self.enter_state('promote')
             else:
-                if self.chess_board.is_king_in_check(chess.get_current_team(self.chess_board.move_num + 1)):
+                if self.chess_board.is_king_in_check(self.chess_board.get_current_team()):
                     self.play_sound('check')
+                elif target: 
+                    self.play_sound('capture')
                 else:
-                    if target: 
-                        self.play_sound('capture')
-                    else:
-                        self.play_sound('move')
-                #self.turn += 1
-                self.enter_game_state('wait')
+                    self.play_sound('move')
+                self.enter_state('wait')
 
     def update_game_promote (self): 
         if self.is_ai_turn():
@@ -504,7 +445,7 @@ class Game:
             # AI always chooses the queen here
             self.chess_board.set(*self.selected_end, chess.role_as_team(chess.WHITE_QUEEN, team))
             #self.turn += 1
-            self.enter_game_state('wait') 
+            self.enter_state('wait') 
         elif self.input_is_fresh:
             self.input_is_fresh = False
             self.selected_sprite = None
@@ -525,43 +466,51 @@ class Game:
                     self.play_sound('promote')
                     self.chess_board.set(*self.selected_end, chess.role_as_team(role, current_team))
                     #self.turn += 1
-                    self.enter_game_state('wait')
+                    self.enter_state('wait')
                 else:
                     self.play_sound('error')
             else:
                 self.play_sound('error')
 
     def update_game_castle (self):
+        assert self.state in ('queenside castle', 'kingside castle')
         assert self.selected_sprite and self.selected_start and self.selected_end
         assert None not in (self.moving_dx, self.moving_dy, self.moving_steps)
-        assert chess.get_piece_role(self.selected_sprite.piece) == chess.WHITE_KING
-        if self.moving_steps > 0:
-            # Move the sprite (KING) a little
-            self.moving_steps -= 1
-            self.selected_sprite.x += self.moving_dx
-            self.selected_sprite.y += self.moving_dy
-        else:
-            # Align king to grid
-            self.move_sprite_on_board(self.selected_sprite, *self.selected_end)
-            # Now start moving the rook
-            self.enter_game_state('castle the rook') 
-
-    def update_game_castle_rook (self): 
-        assert self.selected_sprite and self.selected_start and self.selected_end
-        assert None not in (self.moving_dx, self.moving_dy, self.moving_steps)
-        assert self.previous_castle_state in ('queenside castle', 'kingside castle')
-
+        assert self.castle_state in ('king', 'rook') 
         if self.moving_steps > 0:
             # Move the sprite a little
             self.moving_steps -= 1
             self.selected_sprite.x += self.moving_dx
             self.selected_sprite.y += self.moving_dy
         else:
-            # Finalize the moving sprite
-            self.move_sprite_on_board(self.selected_sprite, *self.selected_end)
-            #self.turn += 1
-            self.play_sound('castle')
-            self.enter_game_state('wait')
+            # Move on to move the castle/rook or finish all
+            if self.castle_state == 'king':
+                # Align king piece to grid
+                self.move_sprite_on_board(self.selected_sprite, *self.selected_end)
+                row = chess.get_king_row(self.chess_board.get_current_team())
+                if self.state == 'kingside castle':
+                    new_start = (row, 7)
+                    new_end = (row, 5)
+                elif self.state == 'queenside castle':
+                    new_start = (row, 0)
+                    new_end = (row, 3)
+                else:
+                    raise ValueError('not in correct castling state')
+                self.selected_sprite = self.get_sprite_at(*new_start)
+                self.castle_move_end = new_end # Note: variable only used below when aligning the rook to the board
+                start_x, start_y = board_to_screen(*new_start)
+                end_x, end_y = board_to_screen(*new_end)
+                self.moving_steps = 4
+                self.moving_dx = (end_x - start_x) // self.moving_steps
+                self.moving_dy = (end_y - start_y) // self.moving_steps 
+                self.castle_state = 'rook'
+            elif self.castle_state == 'rook':
+                # Align king piece to grid, using the extra attribute data
+                self.move_sprite_on_board(self.selected_sprite, *self.castle_move_end) 
+                # Now is when the chess board data is updated during castling
+                self.play_sound('castle')
+                self.chess_board.make_move(*self.selected_start, *self.selected_end)
+                self.enter_state('wait')
 
     def update_game_mate (self): 
         # Wait to play the checkmate sound
@@ -579,7 +528,7 @@ class Game:
                 if sprite := self.get_sprite_at(*rowcol):
                     losing_king = self.chess_board.get_current_team()
                     if sprite.piece == losing_king:
-                        self.enter_game_state('resign')
+                        self.enter_state('resign')
 
     def update_game_resign (self): 
         if self.move_steps > 0:
@@ -588,28 +537,39 @@ class Game:
             # Reset the game
             self.__init__(self.screen, self.spritesheet)
 
-    def update_game (self):
-        if self.game_state == 'choose team':
-            self.update_game_choose() 
-        elif self.game_state == 'wait':
-            self.update_game_wait()
-        elif self.game_state == 'move':
-            self.update_game_move() 
-        elif self.game_state == 'promote':
-            self.update_game_promote() 
-        elif self.game_state in ('queenside castle', 'kingside castle'):
-            self.update_game_castle()
-        elif self.game_state == 'castle the rook':
-            self.update_game_castle_rook() 
-        elif self.game_state == 'mate':
-            self.update_game_mate() 
-        elif self.game_state == 'resign':
-            self.update_game_resign()
+    def update_transition (self): 
+        if self.transition_timer > 0:
+            self.transition_timer -= 1
         else:
-            raise ValueError('invalid game state') 
-        # TODO: move these inside of the respective game state functions
-        self.update_timers()
-        self.update_message()
+            self.enter_state('play')
+
+    def update_menu (self):
+        pass
+
+    def update (self):
+        s = self.state
+        if 'choose team' == s:
+            self.update_game_choose() 
+        elif 'wait' == s:
+            self.update_game_wait()
+        elif 'move' == s:
+            self.update_game_move() 
+        elif 'promote' == s:
+            self.update_game_promote() 
+        elif s in ('queenside castle', 'kingside castle'):
+            self.update_game_castle()
+        elif 'castle the rook' == s:
+            self.update_game_castle_rook() 
+        elif 'mate' == s:
+            self.update_game_mate() 
+        elif 'resign' == s:
+            self.update_game_resign()
+        elif 'transition' == s:
+            self.update_transition()
+        elif 'menu' == s:
+            self.update_menu()
+        else:
+            raise ValueError('invalid game state: %s' %s) 
 
     def is_ai_turn (self):
         team = self.chess_board.get_current_team()
@@ -617,7 +577,7 @@ class Game:
                 or team == chess.WHITE_KING and self.white_is_ai)
 
     def create_highlight_sprites (self):
-        if self.game_state == 'mate':
+        if self.state == 'mate':
             losing_king = self.chess_board.get_current_team()
             king_pos = self.chess_board.find_piece(losing_king)
             self.highlight_sprites = [Sprite(330, *board_to_screen(*king_pos), 2)]
@@ -639,7 +599,7 @@ class Game:
 
     def display (self):
         self.display_background()
-        if self.state == 'play':
+        if self.is_play_state(self.state):
             # Highlighted squares
             for sprite in self.highlight_sprites:
                 draw_tile(self.screen, self.spritesheet, sprite.tile, sprite.x, sprite.y, 2)
@@ -741,7 +701,9 @@ def main ():
     spritesheet = pygame.image.load('spritesheet.png').convert_alpha()
     screen2 = pygame.Surface((WIDTH * SCALE, HEIGHT * SCALE))
     game = Game(screen, spritesheet)
+    clock = pygame.time.Clock()
     while game.running:
+        clock.tick(FPS)
         for event in pygame.event.get():
             game.note_event(event)
         game.update()
