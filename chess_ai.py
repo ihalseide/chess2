@@ -203,8 +203,11 @@ def minimax (board, depth, alpha, beta, is_maximizing_player):
         return best_value 
 
 def get_move (board, team):
-    move = minimax_root(board, depth=3, is_maximizing_player=True)
-    return move
+    if board.move_num <=1:
+        depth = 2
+    else:
+        depth = 3
+    return minimax_root(board, depth, is_maximizing_player=True)
 
 if __name__ == '__main__':
     assert len(ROOK_EVAL_BLACK) == 64
