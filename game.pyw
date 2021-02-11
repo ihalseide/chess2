@@ -1,10 +1,7 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3 
 
-import pygame
-import os 
-
-import chess
-import chess_ai
+import pygame, os, threading, random, sys
+import chess, chess_ai
 from backgrounds import *
 
 WIDTH, HEIGHT = 256, 240
@@ -16,14 +13,12 @@ MESSAGE_X, MESSAGE_Y = 40, 32
 JAIL_START_X, JAIL_END_X = 200, 248
 BLACK_JAIL_Y = 200
 WHITE_JAIL_Y = 40
-WIN_TEXT = [
+GAME_OVER_TEXT = [
         "you can now play as luigi",
-        "free play unlocked"
-        ]
-LOSE_TEXT = [
+        "free play unlocked",
         "all your base are belong to us",
-        "sorry mate",
-        "screams echo around you"
+        "i'm king of the world!",
+        "i'll be back"
         ]
 
 class Sprite:
@@ -42,7 +37,7 @@ class Game:
         self.running = True
         self.state = 'menu'
         self.valid_states = ('menu', 'transition', 'play', 'wait', 'move', 'promote', 'queenside castle',
-                'kingside castle', 'mate', 'resign', 'choose team')
+                'kingside castle', 'mate', 'resign', 'choose team', 'game over')
         self.init_sounds()
         self.enter_state(self.state)
 
@@ -61,8 +56,11 @@ class Game:
         self.update_message()
     
     def get_message (self):
+        assert self.state in self.valid_states
         is_white = self.chess_board.get_current_team() == chess.WHITE_KING
         state = self.state
+        if state == 'game over':
+            return random.choice(GAME_OVER_TEXT)
         if state == 'choose team':
             return 'select the pieces to lead' 
         elif state == 'promote':
@@ -70,7 +68,7 @@ class Game:
                 return 'white# pawn promotion'
             else:
                 return 'black$ pawn promotion'
-        elif state == 'mate':
+        elif state == 'mate' or state == 'resign':
             winner = self.chess_winner
             if winner == chess.WHITE_KING:
                 return 'white# checkmates black$!'
@@ -112,7 +110,7 @@ class Game:
 
     def init_sounds (self):
         names = ['check', 'checkmate', 'error', 'move', 'promote', 'can promote',
-                'capture', 'castle', 'resign', 'reveal']
+                'capture', 'castle', 'resign', 'reveal', 'game over']
         sound = lambda name: pygame.mixer.Sound(os.path.join('sound', name))
         self.sounds = {name: sound(name + '.wav') for name in names}
 
@@ -149,7 +147,7 @@ class Game:
         assert state in self.valid_states
         self.state = state
         if state == 'menu':
-            self.background = MENU_BACKGROUND
+            self.set_background(MENU_BACKGROUND)
             self.num_players = None
             self.show_option_0 = False
             self.trigger_option_0_rect = pygame.Rect(72, 224, 8, 8)
@@ -158,9 +156,9 @@ class Game:
             self.option_2_rect = pygame.Rect(96, 152, 64, 8)
             self.cursor_y = 256 
         elif state == 'transition': 
-            self.transition_timer = 90
+            self.move_steps = 100
             self.state = 'transition'
-            self.background = TRANSITION_BACKGROUND
+            self.set_background(TRANSITION_BACKGROUND)
             self.init_movement()
             self.init_chess()
             self.init_timers()
@@ -169,7 +167,7 @@ class Game:
             self.highlight_sprites = []
             self.init_message()
         elif state == 'play':
-            self.background = GAME_BACKGROUND
+            self.set_background(GAME_BACKGROUND)
             if self.num_players == 1:
                 self.enter_state('choose team')
             else:
@@ -202,8 +200,9 @@ class Game:
             if self.chess_board.is_king_in_check(self.chess_board.get_current_team()):
                 self.play_sound('check')
             if self.chess_board.is_game_over():
+                self.chess_winner = self.chess_board.get_winner()
                 self.enter_state('mate')
-                self.state = 'mate'
+                return
             self.update_message()
         elif state == 'move':
             assert self.selected_sprite and self.selected_start and self.selected_end
@@ -237,8 +236,17 @@ class Game:
             self.sound_delay = 16 
             self.update_message()
         elif state == 'resign':
-            self.move_steps = 32
             self.play_sound('resign') 
+            self.move_steps = 32
+            self.overlay_surf = pygame.Surface((WIDTH, HEIGHT))
+            self.overlay_surf.set_colorkey((255, 255, 255))
+            losing_king = self.chess_board.get_current_team()
+            losing_coords = self.chess_board.find_piece(losing_king)
+            king_sprite = self.get_sprite_at(*losing_coords)
+            self.target_x, self.target_y = king_sprite.x + 8, king_sprite.y + 8
+        elif state == 'game over': 
+            self.move_steps = 180
+            self.set_background(GAME_OVER_BACKGROUND)
         else:
             # If this point is reached, I made a typo in the above if-statements
             raise SyntaxError() 
@@ -258,19 +266,15 @@ class Game:
                     self.pieces.append(new)
 
     def note_event (self, event):
-        if event.type == pygame.QUIT:
-            self.running = False
-        elif event.type == pygame.MOUSEBUTTONDOWN:
-            x, y = event.pos[0] // SCALE, event.pos[1] // SCALE
-            if self.state == 'wait':
-                self.input_x = x
-                self.input_y = y
-                self.input_is_fresh = True
-            elif self.state == 'menu':
-                xy = x,y
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_d:
+                print('state:', self.state, ', player #:', self.num_players)
+        if self.state == 'menu':
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                xy = event.pos[0] // SCALE, event.pos[1] // SCALE
                 if self.trigger_option_0_rect.collidepoint(xy):
                     if not self.show_option_0:
-                        self.background = MENU_BACKGROUND_2
+                        self.set_background(MENU_BACKGROUND_2)
                         self.play_sound('reveal')
                     self.show_option_0 = True
                 elif self.show_option_0 and self.option_0_rect.collidepoint(xy):
@@ -281,16 +285,20 @@ class Game:
                     self.num_players = 2
                 if self.num_players is not None:
                     self.enter_state('transition')
-        elif event.type == pygame.MOUSEMOTION:
-            x, y = event.pos[0] // SCALE, event.pos[1] // SCALE
-            if self.state == 'menu':
-                xy = x,y
+            elif event.type == pygame.MOUSEMOTION:
+                xy = event.pos[0] // SCALE, event.pos[1] // SCALE
                 if self.show_option_0 and self.option_0_rect.collidepoint(xy):
                     self.cursor_y = 120
                 elif self.option_1_rect.collidepoint(xy):
                     self.cursor_y = 136
                 elif self.option_2_rect.collidepoint(xy):
                     self.cursor_y = 152 
+        elif self.state == 'transition':
+            pass
+        else:
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                self.input_x, self.input_y = event.pos[0] // SCALE, event.pos[1] // SCALE
+                self.input_is_fresh = True
 
     def move_sprite_on_board (self, sprite, row, col):
         assert row in range(8) and col in range(8)
@@ -530,17 +538,24 @@ class Game:
         if self.move_steps > 0:
             self.move_steps -= 1
         else:
-            # Reset the game
-            self.__init__(self.screen, self.spritesheet)
+            self.play_sound('game over')
+            self.enter_state('game over')
 
     def update_transition (self): 
-        if self.transition_timer > 0:
-            self.transition_timer -= 1
+        if self.move_steps > 0:
+            self.move_steps -= 1
         else:
             self.enter_state('play')
 
     def update_menu (self):
         pass
+
+    def update_game_over (self):
+        if self.move_steps > 0:
+            self.move_steps -= 1
+        else:
+            # Reset
+            self.__init__(self.screen, self.spritesheet)
 
     def update (self):
         s = self.state
@@ -564,6 +579,8 @@ class Game:
             self.update_transition()
         elif 'menu' == s:
             self.update_menu()
+        elif 'game over' == s:
+            self.update_game_over()
         else:
             raise ValueError('invalid game state: %s' %s) 
 
@@ -587,11 +604,10 @@ class Game:
                     sprite = Sprite(328, x, y, 2)
                     self.highlight_sprites.append(sprite)
 
-    def update_result_sounds (self):
-        if self.chess_board.get_winner():
-            self.play_sound('checkmate')
-        elif self.chess_board.king_is_in_check(self.chess_board.get_current_team()):
-            self.play_sound('check')
+    def draw_message (self, black=False): 
+        offset = 318 if black else 0
+        for sprite in self.message_sprites:
+            draw_tile(self.screen, self.spritesheet, sprite.tile + offset, sprite.x, sprite.y) 
 
     def display (self):
         self.display_background()
@@ -603,18 +619,28 @@ class Game:
             for sprite in self.pieces:
                 draw_tile(self.screen, self.spritesheet, sprite.tile, sprite.x, sprite.y, sprite.size)
             # Message character sprites
-            for sprite in self.message_sprites:
-                draw_tile(self.screen, self.spritesheet, sprite.tile, sprite.x, sprite.y)
+            self.draw_message()
             self.display_number(self.black_minutes, 104, 8)
             self.display_number(self.black_seconds, 128, 8)
             self.display_number(self.white_minutes, 104, 224)
             self.display_number(self.white_seconds, 128, 224)
+            # Resignation closing circle
+            if self.state == 'resign': 
+                radius = self.move_steps * 4
+                self.overlay_surf.fill((0, 0, 0))
+                pygame.draw.circle(self.overlay_surf, (255, 255, 255), (self.target_x, self.target_y), radius)
+                self.screen.blit(self.overlay_surf, (0, 0))
+        elif self.state == 'game over':
+            self.draw_message(black=True)
         elif self.state == 'menu':
             cursor = 257
             draw_tile(self.screen, self.spritesheet, cursor, 80, self.cursor_y)
         elif self.state == 'transition':
             tile = 316 + self.num_players 
             draw_tile(self.screen, self.spritesheet, tile, 72, 56)
+
+    def set_background (self, array):
+        self.background = array.copy()
 
     def display_background (self):
         for i, tile in enumerate(self.background):
@@ -688,10 +714,11 @@ def game_quit ():
     pygame.quit()
 
 def char_to_tile (char):
-    order = '$#abcdefghijklmnopqrstuvwxyz0123______456789-:!,.%@? '
+    order = '$#abcdefghijklmnopqrstuvwxyz0123______456789-:!,.%@? _\''
     return 256 + order.index(char)
 
 def main ():
+    sys.setrecursionlimit(100)
     pygame.init()
     screen = display_init()
     spritesheet = pygame.image.load('spritesheet.png').convert_alpha()
@@ -701,7 +728,11 @@ def main ():
     while game.running:
         clock.tick(FPS)
         for event in pygame.event.get():
-            game.note_event(event)
+            if event.type == pygame.QUIT:
+                game.running = False
+                break
+            else:
+                game.note_event(event)
         game.update()
         game.display()
         small = screen.subsurface((0, 0, WIDTH, HEIGHT))
