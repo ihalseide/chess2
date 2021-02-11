@@ -204,15 +204,6 @@ class Game:
             if self.chess_board.is_game_over():
                 self.enter_state('mate')
                 self.state = 'mate'
-            else:
-                # AI moves
-                team = self.chess_board.get_current_team()
-                if self.is_ai_turn():
-                    row, col, to_row, to_col = chess_ai.get_move(self.chess_board, team)
-                    #print('ai choice:', row, col, '->', to_row, to_col)
-                    self.selected_start = row, col
-                    self.selected_end = to_row, to_col 
-                    self.selected_sprite = self.get_sprite_at(*self.selected_start)
             self.update_message()
         elif state == 'move':
             assert self.selected_sprite and self.selected_start and self.selected_end
@@ -220,8 +211,7 @@ class Game:
             end_x, end_y = board_to_screen(*self.selected_end)
             self.moving_steps = 8
             self.moving_dx = (end_x - start_x) // self.moving_steps
-            self.moving_dy = (end_y - start_y) // self.moving_steps
-
+            self.moving_dy = (end_y - start_y) // self.moving_steps 
         elif state == 'promote':
             assert self.selected_sprite and self.selected_start and self.selected_end 
             self.update_message() 
@@ -366,8 +356,14 @@ class Game:
 
     def update_game_wait (self): 
         # Validate selection of pieces and moves
-        self.update_timers()
-        if self.input_is_fresh:
+        self.update_timers() 
+        if self.is_ai_turn():
+            team = self.chess_board.get_current_team()
+            row, col, to_row, to_col = chess_ai.get_move(self.chess_board, team)
+            self.selected_start = row, col
+            self.selected_end = to_row, to_col 
+            self.selected_sprite = self.get_sprite_at(*self.selected_start)
+        elif self.input_is_fresh:
             self.input_is_fresh = False
             rowcol = screen_to_board(self.input_x, self.input_y)
             if rowcol:
