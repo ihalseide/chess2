@@ -1,14 +1,3 @@
-
-def print_board(b):
-    order = '.PBNRQKpbnrqk'
-    print('board printout:')
-    for row in range(8):
-        for col in range(8):
-            p = b.get(row, col)
-            c = order[p]
-            print(c, end=' ')
-        print()
-    print('      ---- end board printout')
 #!/usr/bin/env python3
 
 import pygame
@@ -16,6 +5,7 @@ import os
 
 import chess
 import chess_ai
+from backgrounds import *
 
 WIDTH, HEIGHT = 256, 240
 SCALE = 2
@@ -35,134 +25,6 @@ LOSE_TEXT = [
         "sorry mate",
         "screams echo around you"
         ]
-MENU_BACKGROUND = [ 
-        288,289,290,290,290,290,290,290,290,290,290,290,290,290,290,290,290,290,290,290,290,290,290,290,290,290,290,290,290,290,292,293,
-        320,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,325,
-        320,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,357,
-        320,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,389,
-        320,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,421,
-        320,308,308,308,308,308,0,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,19,308,308,308,308,308,421,
-        320,308,308,308,308,308,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,179,308,308,308,308,308,421,
-        320,308,308,308,308,308,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,211,308,308,308,308,308,421,
-        320,308,308,308,308,308,32,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,179,308,308,308,308,308,421,
-        320,308,308,308,308,308,64,129,130,131,132,133,134,135,136,137,138,139,140,141,142,143,144,145,146,211,308,308,308,308,308,421,
-        320,308,308,308,308,308,32,161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,176,177,178,179,308,308,308,308,308,421,
-        320,308,308,308,308,308,64,193,33,193,194,193,194,193,194,193,194,193,194,193,194,193,194,193,194,211,308,308,308,308,308,421,
-        320,308,308,308,308,308,224,225,226,225,226,225,226,225,226,225,226,225,226,225,226,225,226,225,226,243,308,308,308,308,308,421,
-        320,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,421,
-        320,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,421,
-        320,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,421,
-        320,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,421,
-        320,308,308,308,308,308,308,308,308,308,308,308,285,308,273,269,258,282,262,275,308,308,308,308,308,308,308,308,308,308,308,421,
-        320,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,421,
-        320,308,308,308,308,308,308,308,308,308,308,308,286,308,273,269,258,282,262,275,308,308,308,308,308,308,308,308,308,308,308,421,
-        320,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,421,
-        320,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,421,
-        320,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,421,
-        320,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,421,
-        320,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,421,
-        320,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,421,
-        352,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,421,
-        384,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,421,
-        416,308,308,308,308,308,308,306,286,284,286,285,308,266,283,258,268,308,265,258,269,276,262,266,261,262,308,308,308,308,308,421,
-        448,449,449,449,449,449,449,449,449,449,449,449,449,449,449,449,449,449,449,449,449,449,449,449,449,449,449,450,451,451,452,453
-        ]
-MENU_BACKGROUND_2 = [
-        288,289,290,290,290,290,290,290,290,290,290,290,290,290,290,290,290,290,290,290,290,290,290,290,290,290,290,290,290,290,292,293,
-        320,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,325,
-        320,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,357,
-        320,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,389,
-        320,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,421,
-        320,308,308,308,308,308,0,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,19,308,308,308,308,308,421,
-        320,308,308,308,308,308,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,179,308,308,308,308,308,421,
-        320,308,308,308,308,308,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,211,308,308,308,308,308,421,
-        320,308,308,308,308,308,32,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,179,308,308,308,308,308,421,
-        320,308,308,308,308,308,64,129,130,131,132,133,134,135,136,137,138,139,140,141,142,143,144,145,146,211,308,308,308,308,308,421,
-        320,308,308,308,308,308,32,161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,176,177,178,179,308,308,308,308,308,421,
-        320,308,308,308,308,308,64,193,33,193,194,193,194,193,194,193,194,193,194,193,194,193,194,193,194,211,308,308,308,308,308,421,
-        320,308,308,308,308,308,224,225,226,225,226,225,226,225,226,225,226,225,226,225,226,225,226,225,226,243,308,308,308,308,308,421,
-        320,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,421,
-        320,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,421,
-        320,308,308,308,308,308,308,308,308,308,308,308,284,308,273,269,258,282,262,275,307,308,308,308,308,308,308,308,308,308,308,421,
-        320,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,421,
-        320,308,308,308,308,308,308,308,308,308,308,308,285,308,273,269,258,282,262,275,308,308,308,308,308,308,308,308,308,308,308,421,
-        320,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,421,
-        320,308,308,308,308,308,308,308,308,308,308,308,286,308,273,269,258,282,262,275,308,308,308,308,308,308,308,308,308,308,308,421,
-        320,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,421,
-        320,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,421,
-        320,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,421,
-        320,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,421,
-        320,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,421,
-        320,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,421,
-        352,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,421,
-        384,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,421,
-        416,308,308,308,308,308,308,306,286,284,286,285,308,266,283,258,268,308,265,258,269,276,262,266,261,262,308,308,308,308,308,421,
-        448,449,449,449,449,449,449,449,449,449,449,449,449,449,449,449,449,449,449,449,449,449,449,449,449,449,449,450,451,451,452,453 
-        ]
-TRANSITION_BACKGROUND = [ 
-        513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,
-        513,480,481,481,481,481,481,481,481,481,481,481,481,481,481,481,481,481,481,481,481,481,481,481,481,481,481,481,481,481,482,513,
-        513,512,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,514,513,
-        513,512,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,514,513,
-        513,512,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,514,513,
-        513,512,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,514,513,
-        513,512,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,514,513,
-        513,512,513,513,513,513,513,513,513,326,513,498,494,483,507,487,500,513,489,483,495,487,513,513,513,513,513,513,513,513,514,513,
-        513,512,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,514,513,
-        513,512,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,514,513,
-        513,512,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,514,513,
-        513,512,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,514,513,
-        513,512,513,513,513,513,513,513,513,513,494,487,502,513,502,490,487,513,489,483,495,487,501,513,513,513,513,513,513,513,514,513,
-        513,512,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,514,513,
-        513,512,513,513,513,513,513,513,513,513,513,513,513,484,487,489,491,496,517,513,513,513,513,513,513,513,513,513,513,513,514,513,
-        513,512,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,514,513,
-        513,512,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,514,513,
-        513,512,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,514,513,
-        513,512,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,514,513,
-        513,512,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,514,513,
-        513,512,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,514,513,
-        513,512,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,514,513,
-        513,512,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,514,513,
-        513,512,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,514,513,
-        513,512,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,514,513,
-        513,512,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,514,513,
-        513,512,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,514,513,
-        513,512,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,514,513,
-        513,544,545,545,545,545,545,545,545,545,545,545,545,545,545,545,545,545,545,545,545,545,545,545,545,545,545,545,545,545,546,513,
-        513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513,513
-        ]
-GAME_BACKGROUND = [
-        308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,
-        308,259,269,258,260,268,256,308,277,266,270,262,308,308,308,301,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,
-        308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,
-        308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,
-        308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,
-        308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,
-        308,308,308,308,308,308,308,288,289,290,290,290,290,290,290,290,290,290,290,290,290,290,290,290,293,308,308,308,308,308,308,308,
-        308,308,308,308,308,308,308,320,321,322,323,324,321,322,323,324,321,322,323,324,321,322,323,324,325,308,308,308,308,308,308,308,
-        308,308,308,308,308,308,298,320,353,354,355,356,353,354,355,356,353,354,355,356,353,354,355,356,357,308,308,308,308,308,308,308,
-        308,308,308,308,308,308,308,320,385,386,387,388,385,386,387,388,385,386,387,388,385,386,387,388,389,308,308,308,308,308,308,308,
-        308,308,308,308,308,308,297,320,417,418,419,420,417,418,419,420,417,418,419,420,417,418,419,420,421,308,308,308,308,308,308,308,
-        308,308,308,308,308,308,308,320,321,322,323,324,321,322,323,324,321,322,323,324,321,322,323,324,421,308,308,308,308,308,308,308,
-        308,308,308,308,308,308,296,320,353,354,355,356,353,354,355,356,353,354,355,356,353,354,355,356,421,308,308,308,308,308,308,308,
-        308,308,308,308,308,308,308,320,385,386,387,388,385,386,387,388,385,386,387,388,385,386,387,388,421,308,308,308,308,308,308,308,
-        308,308,308,308,308,308,295,320,417,418,419,420,417,418,419,420,417,418,419,420,417,418,419,420,421,308,308,308,308,308,308,308,
-        308,308,308,308,308,308,308,320,321,322,323,324,321,322,323,324,321,322,323,324,321,322,323,324,421,308,308,308,308,308,308,308,
-        308,308,308,308,308,308,294,320,353,354,355,356,353,354,355,356,353,354,355,356,353,354,355,356,421,308,308,308,308,308,308,308,
-        308,308,308,308,308,308,308,320,385,386,387,388,385,386,387,388,385,386,387,388,385,386,387,388,421,308,308,308,308,308,308,308,
-        308,308,308,308,308,308,287,320,417,418,419,420,417,418,419,420,417,418,419,420,417,418,419,420,421,308,308,308,308,308,308,308,
-        308,308,308,308,308,308,308,320,321,322,323,324,321,322,323,324,321,322,323,324,321,322,323,324,421,308,308,308,308,308,308,308,
-        308,308,308,308,308,308,286,352,353,354,355,356,353,354,355,356,353,354,355,356,353,354,355,356,421,308,308,308,308,308,308,308,
-        308,308,308,308,308,308,308,384,385,386,387,388,385,386,387,388,385,386,387,388,385,386,387,388,421,308,308,308,308,308,308,308,
-        308,308,308,308,308,308,285,416,417,418,419,420,417,418,419,420,417,418,419,420,417,418,419,420,421,308,308,308,308,308,308,308,
-        308,308,308,308,308,308,308,448,449,449,449,449,449,449,449,449,449,449,449,449,449,450,451,452,453,308,308,308,308,308,308,308,
-        308,308,308,308,308,308,308,308,258,308,259,308,260,308,261,308,262,308,263,308,264,308,265,308,308,308,308,308,308,308,308,308,
-        308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,
-        308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,
-        308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,
-        308,280,265,266,277,262,257,308,277,266,270,262,308,308,308,301,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,
-        308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308,308
-        ]
 
 class Sprite:
 
@@ -174,9 +36,9 @@ class Sprite:
 
 class Game:
 
-    def __init__ (self, screen):
+    def __init__ (self, screen, spritesheet):
         self.screen = screen
-        self.spritesheet = pygame.image.load('spritesheet.png').convert_alpha()
+        self.spritesheet = spritesheet
         self.clock = pygame.time.Clock()
         self.running = True
         self.state = 'menu'
@@ -218,8 +80,7 @@ class Game:
             self.enter_game_state('wait')
 
     def init_chess (self): 
-        self.chess_board = chess.Board()
-        self.turn = 0
+        self.chess_board = chess.Game()
         self.black_is_ai = False
         self.white_is_ai = False
 
@@ -229,7 +90,7 @@ class Game:
         self.update_message()
     
     def update_message (self):
-        is_white = chess.get_current_team(self.turn) == chess.WHITE_KING
+        is_white = self.chess_board.get_current_team() == chess.WHITE_KING
         state = self.game_state
         if state == 'choose team':
             message = 'select a team to lead' 
@@ -255,7 +116,7 @@ class Game:
             if is_white:
                 if self.chess_board.is_king_in_check(chess.WHITE_KING):
                     message = 'white# is in check'
-                elif self.turn == 0:
+                elif self.chess_board.move_num == 0:
                     message = 'white# to make 1st move'
                 else:
                     message = 'white# to move'
@@ -354,10 +215,10 @@ class Game:
                 return # don't increase the turn counter
             else:
                 # AI moves
-                team = chess.get_current_team(self.turn)
+                team = self.chess_board.get_current_team()
                 if self.is_ai_turn():
                     row, col, to_row, to_col = chess_ai.get_move(self.chess_board, team)
-                    print('ai choice:', row, col, '->', to_row, to_col)
+                    #print('ai choice:', row, col, '->', to_row, to_col)
                     self.selected_start = row, col
                     self.selected_end = to_row, to_col 
                     self.selected_sprite = self.get_sprite_at(*self.selected_start)
@@ -376,7 +237,7 @@ class Game:
         elif state in ('queenside castle', 'kingside castle'):
             assert self.selected_sprite and self.selected_start and self.selected_end
 
-            team = chess.get_current_team(self.turn)
+            team = chess.get_current_team(self.chess_board.move_num)
             king_square = self.chess_board.find_piece(team)
             can_castle = (
                     (state == 'kingside castle' and self.chess_board.can_castle_kingside(*king_square))
@@ -396,7 +257,7 @@ class Game:
             self.previous_castle_state = self.game_state
             assert self.previous_castle_state in ('queenside castle', 'kingside castle')
 
-            if chess.get_current_team(self.turn) == chess.BLACK_KING:
+            if chess.get_current_team(self.chess_board.move_num) == chess.BLACK_KING:
                 row = 0
             else:
                 row = 7
@@ -420,8 +281,6 @@ class Game:
 
         elif state == 'mate':
             self.sound_delay = 16
-            print_board(self.chess_board)
-            raise ValueError('mate entered')
 
         elif state == 'resign':
             self.move_steps = 32
@@ -527,8 +386,8 @@ class Game:
 
     def update_timers (self): 
         # Don't update the timer until white has moved first
-        if self.turn > 0 and self.game_state != 'mate':
-            if chess.get_current_team(self.turn) == chess.BLACK_KING:
+        if self.chess_board.move_num > 0 and self.game_state != 'mate':
+            if chess.get_current_team(self.chess_board.move_num) == chess.BLACK_KING:
                 self.black_ticks += 1
                 if self.black_ticks >= FPS:
                     self.black_ticks = 0
@@ -545,208 +404,227 @@ class Game:
                         self.white_seconds = 0
                         self.white_minutes += 1
 
-    def update_game (self):
-        if self.game_state == 'choose team':
-            assert self.num_players == 1
-            if self.input_is_fresh:
-                self.input_is_fresh = False
-                rowcol = screen_to_board(self.input_x, self.input_y)
-                if rowcol:
-                    piece = self.chess_board.get(*rowcol)
-                    if chess.is_piece(piece):
-                        team = chess.get_piece_team(piece)
-                        if team == chess.BLACK_KING:
-                            self.white_is_ai = True
-                            self.black_is_ai = False
-                        else:
-                            self.white_is_ai = False
-                            self.black_is_ai = True
-                        self.enter_game_state('wait')
-
-        elif self.game_state == 'wait':
-            # Validate selection of pieces and moves
-            if self.input_is_fresh:
-                self.input_is_fresh = False
-                rowcol = screen_to_board(self.input_x, self.input_y)
-                if rowcol:
-                    current_team = chess.get_current_team(self.turn)
-                    sprite = self.get_sprite_at(*rowcol)
-                    is_team_mate = (sprite is not None) and (current_team == chess.get_piece_team(sprite.piece))
-                    if is_team_mate:
-                            self.selected_start = rowcol
-                            self.create_highlight_sprites()
+    def update_game_choose (self):
+        assert self.num_players == 1
+        if self.input_is_fresh:
+            self.input_is_fresh = False
+            rowcol = screen_to_board(self.input_x, self.input_y)
+            if rowcol:
+                piece = self.chess_board.get(*rowcol)
+                if chess.is_piece(piece):
+                    team = chess.get_piece_team(piece)
+                    if team == chess.BLACK_KING:
+                        self.white_is_ai = True
+                        self.black_is_ai = False
                     else:
-                        if self.selected_start:
-                            self.selected_end = rowcol
-                        else:
-                            self.play_sound('error')
-                            self.enter_game_state('wait')
-                else:
-                    # Clicking off of the board --> deselect everything
+                        self.white_is_ai = False
+                        self.black_is_ai = True
                     self.enter_game_state('wait')
-            if self.selected_start:
-                if self.selected_end:
-                    # Validate start of selection
-                    self.selected_sprite = self.get_sprite_at(*self.selected_start) # could be None
-                    target_sprite = self.get_sprite_at(*self.selected_end) # could be None
-                    current_team = chess.get_current_team(self.turn)
-                    is_legal_move = self.chess_board.is_legal_move(current_team, *self.selected_start, *self.selected_end)
-                    if is_legal_move:
-                        castle = self.chess_board.move_is_castling(*self.selected_start, *self.selected_end)
-                        if castle == chess.WHITE_QUEEN: 
-                            self.enter_game_state('queenside castle')
-                        elif castle == chess.WHITE_KING:
-                            self.enter_game_state('kingside castle')
-                        else:
-                            self.enter_game_state('move')
+
+
+    def update_game_wait (self): 
+        # Validate selection of pieces and moves
+        if self.input_is_fresh:
+            self.input_is_fresh = False
+            rowcol = screen_to_board(self.input_x, self.input_y)
+            if rowcol:
+                current_team = self.chess_board.get_current_team()
+                sprite = self.get_sprite_at(*rowcol)
+                is_team_mate = (sprite is not None) and (current_team == chess.get_piece_team(sprite.piece))
+                if is_team_mate:
+                        self.selected_start = rowcol
+                        self.create_highlight_sprites()
+                else:
+                    if self.selected_start:
+                        self.selected_end = rowcol
                     else:
                         self.play_sound('error')
                         self.enter_game_state('wait')
-        elif self.game_state == 'move':
-            assert self.selected_sprite and self.selected_start and self.selected_end
-            assert None not in (self.moving_dx, self.moving_dy, self.moving_steps)
-            if self.moving_steps > 0:
-                # Move the sprite a little
-                self.moving_steps -= 1
-                self.selected_sprite.x += self.moving_dx
-                self.selected_sprite.y += self.moving_dy
             else:
-                # Remove the captured sprite (if any)
-                target = None
-                if self.chess_board.move_is_en_passant(*self.selected_start, *self.selected_end):
-                    target_square = chess.get_en_passant_capture(*self.selected_start, *self.selected_end)
-                    target = self.get_sprite_at(*target_square)
-                else:
-                    target = self.get_sprite_at(*self.selected_end) 
-                if target:
-                    self.remove_sprite(target)
-                # Finalize the moving sprite
-                self.move_sprite_on_board(self.selected_sprite, *self.selected_end)
-                # Update the chess board
-                self.chess_board.make_move(*self.selected_start, *self.selected_end)
-                if self.chess_board.is_promotable(*self.selected_end):
-                    self.play_sound('can promote')
-                    self.enter_game_state('promote')
-                else:
-                    if self.chess_board.is_king_in_check(chess.get_current_team(self.turn + 1)):
-                        self.play_sound('check')
+                # Clicking off of the board --> deselect everything
+                self.enter_game_state('wait')
+        if self.selected_start:
+            if self.selected_end:
+                # Validate start of selection
+                self.selected_sprite = self.get_sprite_at(*self.selected_start) # could be None
+                target_sprite = self.get_sprite_at(*self.selected_end) # could be None
+                current_team = self.chess_board.get_current_team()
+                is_legal_move = self.chess_board.is_legal_move(current_team, *self.selected_start, *self.selected_end)
+                if is_legal_move:
+                    castle = self.chess_board.move_is_castling(*self.selected_start, *self.selected_end)
+                    if castle == chess.WHITE_QUEEN: 
+                        self.enter_game_state('queenside castle')
+                    elif castle == chess.WHITE_KING:
+                        self.enter_game_state('kingside castle')
                     else:
-                        if target: 
-                            self.play_sound('capture')
-                        else:
-                            self.play_sound('move')
-                    self.turn += 1
-                    self.enter_game_state('wait')
-
-        elif self.game_state == 'promote':
-            if self.is_ai_turn():
-                self.play_sound('promote')
-                # AI always chooses the queen here
-                self.chess_board.set(*self.selected_end, chess.role_as_team(chess.WHITE_QUEEN, team))
-                self.turn += 1
-                self.enter_game_state('wait') 
-            elif self.input_is_fresh:
-                self.input_is_fresh = False
-                self.selected_sprite = None
-                for sprite in self.pieces:
-                    rect = pygame.Rect(sprite.x, sprite.y, 16, 16)
-                    if rect.collidepoint(self.input_x, self.input_y):
-                        self.selected_sprite = sprite
-                        break 
-                if self.selected_sprite:
-                    current_team = chess.get_current_team(self.turn)
-                    piece = self.selected_sprite.piece
-                    role = chess.get_piece_role(piece)
-                    if chess.is_promotable_role(role):
-                        promote_pawn = self.get_sprite_at(*self.selected_end)
-                        new_piece = chess.role_as_team(role, current_team)
-                        promote_pawn.piece = new_piece 
-                        promote_pawn.tile = get_piece_tile(promote_pawn.piece)
-                        self.play_sound('promote')
-                        self.chess_board.set(*self.selected_end, chess.role_as_team(role, current_team))
-                        self.turn += 1
-                        self.enter_game_state('wait')
-                    else:
-                        self.play_sound('error')
+                        self.enter_game_state('move')
                 else:
                     self.play_sound('error')
+                    self.enter_game_state('wait')
 
-        elif self.game_state in ('queenside castle', 'kingside castle'):
-            assert self.selected_sprite and self.selected_start and self.selected_end
-            assert None not in (self.moving_dx, self.moving_dy, self.moving_steps)
-            assert chess.get_piece_role(self.selected_sprite.piece) == chess.WHITE_KING
-            if self.moving_steps > 0:
-                # Move the sprite (KING) a little
-                self.moving_steps -= 1
-                self.selected_sprite.x += self.moving_dx
-                self.selected_sprite.y += self.moving_dy
+    def update_game_move (self):
+        assert self.selected_sprite and self.selected_start and self.selected_end
+        assert None not in (self.moving_dx, self.moving_dy, self.moving_steps)
+        if self.moving_steps > 0:
+            # Move the sprite a little
+            self.moving_steps -= 1
+            self.selected_sprite.x += self.moving_dx
+            self.selected_sprite.y += self.moving_dy
+        else:
+            # Remove the captured sprite (if any)
+            target = None
+            if self.chess_board.move_is_en_passant(*self.selected_start, *self.selected_end):
+                target_square = chess.get_en_passant_capture(*self.selected_start, *self.selected_end)
+                target = self.get_sprite_at(*target_square)
             else:
-                # Align king to grid
-                self.move_sprite_on_board(self.selected_sprite, *self.selected_end)
-                # Now start moving the rook
-                self.enter_game_state('castle the rook') 
-
-        elif self.game_state == 'castle the rook':
-            assert self.selected_sprite and self.selected_start and self.selected_end
-            assert None not in (self.moving_dx, self.moving_dy, self.moving_steps)
-            assert self.previous_castle_state in ('queenside castle', 'kingside castle')
-
-            if self.moving_steps > 0:
-                # Move the sprite a little
-                self.moving_steps -= 1
-                self.selected_sprite.x += self.moving_dx
-                self.selected_sprite.y += self.moving_dy
+                target = self.get_sprite_at(*self.selected_end) 
+            if target:
+                self.remove_sprite(target)
+            # Finalize the moving sprite
+            self.move_sprite_on_board(self.selected_sprite, *self.selected_end)
+            # Update the chess board
+            self.chess_board.make_move(*self.selected_start, *self.selected_end)
+            if self.chess_board.is_promotable(*self.selected_end):
+                self.play_sound('can promote')
+                self.enter_game_state('promote')
             else:
-                # Finalize the moving sprite
-                self.move_sprite_on_board(self.selected_sprite, *self.selected_end)
-                self.turn += 1
-                self.play_sound('castle')
+                if self.chess_board.is_king_in_check(chess.get_current_team(self.chess_board.move_num + 1)):
+                    self.play_sound('check')
+                else:
+                    if target: 
+                        self.play_sound('capture')
+                    else:
+                        self.play_sound('move')
+                #self.turn += 1
                 self.enter_game_state('wait')
 
-        elif self.game_state == 'mate':
-            # Wait to play the checkmate sound
-            if self.sound_delay is not None:
-                if self.sound_delay > 0:
-                    self.sound_delay -= 1
-                else: 
-                    self.sound_delay = None
-                    self.create_highlight_sprites()
-                    self.play_sound('checkmate')
-            # Check for the player to click on their king to resign
-            if self.input_is_fresh:
-                self.input_is_fresh = False
-                if rowcol := screen_to_board(self.input_x, self.input_y):
-                    if sprite := self.get_sprite_at(*rowcol):
-                        losing_king = chess.get_current_team(self.turn)
-                        if sprite.piece == losing_king:
-                            self.enter_game_state('resign')
-
-        elif self.game_state == 'resign':
-            if self.move_steps > 0:
-                self.move_steps -= 1
+    def update_game_promote (self): 
+        if self.is_ai_turn():
+            self.play_sound('promote')
+            # AI always chooses the queen here
+            self.chess_board.set(*self.selected_end, chess.role_as_team(chess.WHITE_QUEEN, team))
+            #self.turn += 1
+            self.enter_game_state('wait') 
+        elif self.input_is_fresh:
+            self.input_is_fresh = False
+            self.selected_sprite = None
+            for sprite in self.pieces:
+                rect = pygame.Rect(sprite.x, sprite.y, 16, 16)
+                if rect.collidepoint(self.input_x, self.input_y):
+                    self.selected_sprite = sprite
+                    break 
+            if self.selected_sprite:
+                current_team = self.chess_board.get_current_team()
+                piece = self.selected_sprite.piece
+                role = chess.get_piece_role(piece)
+                if chess.is_promotable_role(role):
+                    promote_pawn = self.get_sprite_at(*self.selected_end)
+                    new_piece = chess.role_as_team(role, current_team)
+                    promote_pawn.piece = new_piece 
+                    promote_pawn.tile = get_piece_tile(promote_pawn.piece)
+                    self.play_sound('promote')
+                    self.chess_board.set(*self.selected_end, chess.role_as_team(role, current_team))
+                    #self.turn += 1
+                    self.enter_game_state('wait')
+                else:
+                    self.play_sound('error')
             else:
-                # Reset the game
-                self.__init__(self.screen)
-        else:
-            raise ValueError('invalid Game.game_state')
+                self.play_sound('error')
 
+    def update_game_castle (self):
+        assert self.selected_sprite and self.selected_start and self.selected_end
+        assert None not in (self.moving_dx, self.moving_dy, self.moving_steps)
+        assert chess.get_piece_role(self.selected_sprite.piece) == chess.WHITE_KING
+        if self.moving_steps > 0:
+            # Move the sprite (KING) a little
+            self.moving_steps -= 1
+            self.selected_sprite.x += self.moving_dx
+            self.selected_sprite.y += self.moving_dy
+        else:
+            # Align king to grid
+            self.move_sprite_on_board(self.selected_sprite, *self.selected_end)
+            # Now start moving the rook
+            self.enter_game_state('castle the rook') 
+
+    def update_game_castle_rook (self): 
+        assert self.selected_sprite and self.selected_start and self.selected_end
+        assert None not in (self.moving_dx, self.moving_dy, self.moving_steps)
+        assert self.previous_castle_state in ('queenside castle', 'kingside castle')
+
+        if self.moving_steps > 0:
+            # Move the sprite a little
+            self.moving_steps -= 1
+            self.selected_sprite.x += self.moving_dx
+            self.selected_sprite.y += self.moving_dy
+        else:
+            # Finalize the moving sprite
+            self.move_sprite_on_board(self.selected_sprite, *self.selected_end)
+            #self.turn += 1
+            self.play_sound('castle')
+            self.enter_game_state('wait')
+
+    def update_game_mate (self): 
+        # Wait to play the checkmate sound
+        if self.sound_delay is not None:
+            if self.sound_delay > 0:
+                self.sound_delay -= 1
+            else: 
+                self.sound_delay = None
+                self.create_highlight_sprites()
+                self.play_sound('checkmate')
+        # Check for the player to click on their king to resign
+        if self.input_is_fresh:
+            self.input_is_fresh = False
+            if rowcol := screen_to_board(self.input_x, self.input_y):
+                if sprite := self.get_sprite_at(*rowcol):
+                    losing_king = self.chess_board.get_current_team()
+                    if sprite.piece == losing_king:
+                        self.enter_game_state('resign')
+
+    def update_game_resign (self): 
+        if self.move_steps > 0:
+            self.move_steps -= 1
+        else:
+            # Reset the game
+            self.__init__(self.screen, self.spritesheet)
+
+    def update_game (self):
+        if self.game_state == 'choose team':
+            self.update_game_choose() 
+        elif self.game_state == 'wait':
+            self.update_game_wait()
+        elif self.game_state == 'move':
+            self.update_game_move() 
+        elif self.game_state == 'promote':
+            self.update_game_promote() 
+        elif self.game_state in ('queenside castle', 'kingside castle'):
+            self.update_game_castle()
+        elif self.game_state == 'castle the rook':
+            self.update_game_castle_rook() 
+        elif self.game_state == 'mate':
+            self.update_game_mate() 
+        elif self.game_state == 'resign':
+            self.update_game_resign()
+        else:
+            raise ValueError('invalid game state') 
+        # TODO: move these inside of the respective game state functions
         self.update_timers()
         self.update_message()
 
     def is_ai_turn (self):
-        team = chess.get_current_team(self.turn)
+        team = self.chess_board.get_current_team()
         return (team == chess.BLACK_KING and self.black_is_ai
                 or team == chess.WHITE_KING and self.white_is_ai)
 
     def create_highlight_sprites (self):
         if self.game_state == 'mate':
-            losing_king = chess.get_current_team(self.turn)
+            losing_king = self.chess_board.get_current_team()
             king_pos = self.chess_board.find_piece(losing_king)
             self.highlight_sprites = [Sprite(330, *board_to_screen(*king_pos), 2)]
         else:
             self.highlight_sprites = [Sprite(330, *board_to_screen(*self.selected_start), 2)]
             moves = self.chess_board.get_piece_moves(*self.selected_start)
-            team = chess.get_current_team(self.turn)
+            team = self.chess_board.get_current_team()
             for move in moves:
                 if self.chess_board.is_legal_move(team, *self.selected_start, *move):
                     x, y = board_to_screen(*move)
@@ -756,7 +634,7 @@ class Game:
     def update_result_sounds (self):
         if self.chess_board.get_winner():
             self.play_sound('checkmate')
-        elif self.chess_board.king_is_in_check(chess.get_current_team(self.turn)):
+        elif self.chess_board.king_is_in_check(self.chess_board.get_current_team()):
             self.play_sound('check')
 
     def display (self):
@@ -843,9 +721,6 @@ def draw_tile (screen, spritesheet, tile, x, y, size=1):
     img = get_sprite(spritesheet, tile, size)
     screen.blit(img, (x, y))
 
-def is_on_board (row, col):
-    return row in range(8) and col in range(8)
-
 def display_init ():
     pygame.display.init()
     icon = pygame.image.load('icon.png')
@@ -863,8 +738,9 @@ def char_to_tile (char):
 def main ():
     pygame.init()
     screen = display_init()
+    spritesheet = pygame.image.load('spritesheet.png').convert_alpha()
     screen2 = pygame.Surface((WIDTH * SCALE, HEIGHT * SCALE))
-    game = Game(screen)
+    game = Game(screen, spritesheet)
     while game.running:
         for event in pygame.event.get():
             game.note_event(event)

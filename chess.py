@@ -1,7 +1,7 @@
-# This file contains the main code and logic behind the game of Chess
-
-# Use these line breaks to avoid mistakes, since it is important that these constant numbers are correct
-# The kings are also used to represent the teams as a whole
+# This file contains the main code and logic behind the game of Chess 
+# Note: The King Pieces are also used to represent the teams as a whole
+# These constants use these line breaks to avoid mistakes,
+# since it is important that these constant numbers are correct
 EMPTY, \
 WHITE_PAWN, \
 WHITE_BISHOP, \
@@ -17,10 +17,9 @@ BLACK_QUEEN, \
 BLACK_KING \
 = range(13)
 
-# Board size constants for calculations
+# Board properties
 LENGTH = 8
-NUM_SQUARES = LENGTH * LENGTH
-
+NUM_SQUARES = 64 
 STANDARD_BOARD = [
         BLACK_ROOK, BLACK_KNIGHT, BLACK_BISHOP, BLACK_QUEEN, BLACK_KING, BLACK_BISHOP, BLACK_KNIGHT, BLACK_ROOK,
         BLACK_PAWN, BLACK_PAWN, BLACK_PAWN, BLACK_PAWN, BLACK_PAWN, BLACK_PAWN, BLACK_PAWN, BLACK_PAWN,
@@ -30,27 +29,18 @@ STANDARD_BOARD = [
         EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY,
         WHITE_PAWN, WHITE_PAWN, WHITE_PAWN, WHITE_PAWN, WHITE_PAWN, WHITE_PAWN, WHITE_PAWN, WHITE_PAWN,
         WHITE_ROOK, WHITE_KNIGHT, WHITE_BISHOP, WHITE_QUEEN, WHITE_KING, WHITE_BISHOP, WHITE_KNIGHT, WHITE_ROOK,
-        ]
-
+        ] 
 # Standard piece locations for castling
 QUEENS_ROOK_COL = 0
 KINGS_ROOK_COL = 7
 KING_COL = 4
 
-# (General utility function not specifically for chess)
-def list_copy (list_) -> list:
-    return [x for x in list_]
-
-class Board:
+class Game:
 
     def __init__ (self, pieces=None, history=None, move_num=0):
         # These lists should be a COPY of the prototypes so that they don't modify the input
-        # lists!
-        if pieces is None:
-            self.pieces = list_copy(STANDARD_BOARD)
-        else:
-            self.pieces = list_copy(pieces) 
-        self.history = list_copy(history) if history else []
+        self.pieces = pieces.copy() if pieces else STANDARD_BOARD.copy()
+        self.history = history.copy() if history else []
         self.move_num = move_num
 
     def get_current_team (self):
@@ -75,7 +65,7 @@ class Board:
             raise ValueError('invalid row or column')
 
     def copy (self):
-        return Board(self.pieces, self.history, self.move_num)
+        return Game(self.pieces, self.history, self.move_num)
 
     def get_piece_is_threatened (self, row, col):
         team = get_piece_team(self.get(row, col))
@@ -415,10 +405,6 @@ def pawn_plus_deltas (row, col, team):
         deltas[i] = tuple(deltas[i])
     return tuple(deltas)
 
-def standard_board ():
-    board = Board()
-    return board
-
 def in_board_range (row, col):
     return row in range(LENGTH) and col in range(LENGTH)
 
@@ -507,7 +493,7 @@ def get_enemy_team (team):
         return WHITE_KING
 
 def is_piece (x):
-    return x in range(1, 13)
+    return type(x) == int and x in range(1, 13)
 
 def get_en_passant_capture (from_row, from_col, to_row, to_col):
     return (from_row, to_col)
@@ -515,14 +501,20 @@ def get_en_passant_capture (from_row, from_col, to_row, to_col):
 def get_rook_castle_cols (king_move_to_col): 
     from_col_rook = 7 if (king_move_to_col == 6) else 0
     to_col_rook = 5 if (king_move_to_col == 6) else 3
-    return from_col_rook, to_col_rook
+    return from_col_rook, to_col_rook 
 
-if __name__ == '__main__':
+def is_on_board (row, col):
+    return row in range(LENGTH) and col in range(LENGTH)
+
+def _test ():
+    assert LENGTH * LENGTH == NUM_SQUARES
+    assert len(STANDARD_BOARD) == NUM_SQUARES
+
+    assert not is_piece(True)
     assert not is_piece(False)
     assert not is_piece(None)
     assert not is_piece(EMPTY)
 
-    assert is_piece(True)
     assert is_piece(WHITE_PAWN)
     assert is_piece(WHITE_BISHOP)
     assert is_piece(WHITE_KNIGHT)
@@ -539,7 +531,13 @@ if __name__ == '__main__':
     x = WHITE_KING
     assert get_enemy_team(get_enemy_team(x)) == x
 
-    test = Board()
+    test = Game()
     moves = test.get_team_moves(WHITE_KING)
     print(len(moves))
     print(moves)
+
+if __name__ == '__main__':
+    try:
+        _test()
+    finally: 
+        input('press enter to continue...')
