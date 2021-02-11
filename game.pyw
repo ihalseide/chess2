@@ -32,6 +32,7 @@ class Sprite:
 class Game:
 
     def __init__ (self, screen, spritesheet):
+        self.debug = False
         self.screen = screen
         self.spritesheet = spritesheet
         self.running = True
@@ -266,8 +267,9 @@ class Game:
                     self.pieces.append(new)
 
     def note_event (self, event):
-        if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_d:
+        if self.debug and event.type == pygame.KEYDOWN:
+            k = event.key
+            if k == pygame.K_d:
                 print('state:', self.state, ', player #:', self.num_players)
         if self.state == 'menu':
             if event.type == pygame.MOUSEBUTTONDOWN:
@@ -283,6 +285,9 @@ class Game:
                     self.num_players = 1
                 elif self.option_2_rect.collidepoint(xy):
                     self.num_players = 2
+                elif xy[0] == xy[1] == 0:
+                    self.play_sound('reveal')
+                    self.debug = True
                 if self.num_players is not None:
                     self.enter_state('transition')
             elif event.type == pygame.MOUSEMOTION:
