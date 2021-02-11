@@ -326,6 +326,7 @@ class Game:
     def can_castle_queenside (self, row, col):
         king = self.get(row, col)
         return (get_piece_role(king) == WHITE_KING
+                and row == get_king_row(get_piece_team(king))
                 and not self.has_moved(row, KING_COL)
                 and not self.has_moved(row, QUEENS_ROOK_COL)
                 and (EMPTY == self.get(row, 1) == self.get(row, 2) == self.get(row, 3))
@@ -335,6 +336,7 @@ class Game:
         king = self.get(row, col)
         # Checking if the king is in check should be done elsewhere
         return (get_piece_role(king) == WHITE_KING
+                and row == get_king_row(get_piece_team(king))
                 and not self.has_moved(row, KING_COL)
                 and not self.has_moved(row, KINGS_ROOK_COL)
                 and (EMPTY == self.get(row, 5) == self.get(row, 6)))
