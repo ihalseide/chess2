@@ -57,12 +57,12 @@ class Game:
         else:
             raise ValueError('invalid row or column')
 
+    def get_i (self, index):
+        return self.pieces[index]
+
     def get (self, row, col):
         i = rowcol_to_index(row, col)
-        if i is not None:
-            return self.pieces[i]
-        else:
-            raise ValueError('invalid row or column')
+        return self.get_i(i)
 
     def copy (self):
         return Game(self.pieces, self.history, self.move_num)

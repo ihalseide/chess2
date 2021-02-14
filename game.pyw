@@ -1,9 +1,10 @@
 #!/usr/bin/env python3 
 
-import pygame, os, threading, random, sys
+import pygame, os, threading, random
 import chess, chess_ai
 from backgrounds import *
 
+AI_TIME_LIMIT = 3000000000 # nanoseconds
 WIDTH, HEIGHT = 256, 240
 SCALE = 2
 FPS = 30 # Frames Per Seconds
@@ -29,6 +30,18 @@ class Sprite:
         self.y = y
         self.size = size
 
+class ThreadedAI (threading.Thread):
+
+    def __init__ (self, chess_board, time_limit):
+        threading.Thread.__init__(self)
+        self.chess_board = chess_board
+        self.time_limit = time_limit
+        self.result = None
+        self.depth = None
+
+    def run (self):
+        self.result, self.depth = chess_ai.ai_process(self.chess_board, self.time_limit)
+
 class Game:
 
     def __init__ (self, screen, spritesheet):
@@ -50,6 +63,7 @@ class Game:
         self.chess_board = chess.Game()
         self.black_is_ai = False
         self.white_is_ai = False
+        self.ai_thread = None
 
     def init_message (self):
         self.message = None
@@ -104,9 +118,15 @@ class Game:
 
     def create_message_sprites (self):
         self.message_sprites = []
-        for i, char in enumerate(self.message):
+        x = MESSAGE_X
+        y = MESSAGE_Y
+        for char in self.message:
             tile = char_to_tile(char)
-            s = Sprite(tile, MESSAGE_X + i * 8, MESSAGE_Y, 1)
+            if x >= WIDTH - 16:
+                x = MESSAGE_X
+                y += 16
+            s = Sprite(tile, x, y, 1)
+            x += 8
             self.message_sprites.append(s)
 
     def init_sounds (self):
@@ -246,10 +266,12 @@ class Game:
             king_sprite = self.get_sprite_at(*losing_coords)
             self.target_x, self.target_y = king_sprite.x + 8, king_sprite.y + 8
         elif state == 'game over': 
-            self.move_steps = 180
+            self.move_steps = 180 
+            self.play_sound('game over')
             self.set_background(GAME_OVER_BACKGROUND)
+            self.update_message()
         else:
-            # If this point is reached, I made a typo in the above if-statements
+            # If this point is reached, there is a typo in the above IF statements
             raise SyntaxError() 
 
     def init_pieces (self):
@@ -367,16 +389,22 @@ class Game:
                         self.black_is_ai = True
                     self.enter_state('wait') 
 
-    def update_game_wait (self): 
-        # Validate selection of pieces and moves
-        self.update_timers() 
-        if self.is_ai_turn():
-            team = self.chess_board.get_current_team()
-            row, col, to_row, to_col = chess_ai.get_move(self.chess_board, team)
-            self.selected_start = row, col
-            self.selected_end = to_row, to_col 
-            self.selected_sprite = self.get_sprite_at(*self.selected_start)
-        elif self.input_is_fresh:
+    def update_game_wait_ai (self):
+        if self.ai_thread is not None:
+            if not self.ai_thread.is_alive():
+                row, col, to_row, to_col = self.ai_thread.result
+                print('ai depth reached:', self.ai_thread.depth)
+                self.selected_start = row, col
+                self.selected_end = to_row, to_col 
+                self.selected_sprite = self.get_sprite_at(*self.selected_start)
+                self.ai_thread = None
+        else:
+            # Startup AI eval
+            self.ai_thread = ThreadedAI(self.chess_board.copy(), AI_TIME_LIMIT)
+            self.ai_thread.start()
+
+    def update_game_wait_player (self):
+        if self.input_is_fresh:
             self.input_is_fresh = False
             rowcol = screen_to_board(self.input_x, self.input_y)
             if rowcol:
@@ -395,24 +423,32 @@ class Game:
             else:
                 # Clicking off of the board --> deselect everything
                 self.enter_state('wait')
-        if self.selected_start:
-            if self.selected_end:
-                # Validate start of selection
-                self.selected_sprite = self.get_sprite_at(*self.selected_start) # could be None
-                target_sprite = self.get_sprite_at(*self.selected_end) # could be None
-                current_team = self.chess_board.get_current_team()
-                is_legal_move = self.chess_board.is_legal_move(current_team, *self.selected_start, *self.selected_end)
-                if is_legal_move:
-                    castle = self.chess_board.move_is_castling(*self.selected_start, *self.selected_end)
-                    if castle == chess.WHITE_QUEEN: 
-                        self.enter_state('queenside castle')
-                    elif castle == chess.WHITE_KING:
-                        self.enter_state('kingside castle')
-                    else:
-                        self.enter_state('move')
+
+    def update_game_wait (self): 
+        # Validate selection of pieces and moves
+        self.update_timers() 
+        if self.is_ai_turn():
+            self.update_game_wait_ai()
+        else:
+            self.update_game_wait_player()
+
+        if self.selected_start and self.selected_end:
+            # Validate start of selection
+            self.selected_sprite = self.get_sprite_at(*self.selected_start) # could be None
+            target_sprite = self.get_sprite_at(*self.selected_end) # could be None
+            current_team = self.chess_board.get_current_team()
+            is_legal_move = self.chess_board.is_legal_move(current_team, *self.selected_start, *self.selected_end)
+            if is_legal_move:
+                castle = self.chess_board.move_is_castling(*self.selected_start, *self.selected_end)
+                if castle == chess.WHITE_QUEEN: 
+                    self.enter_state('queenside castle')
+                elif castle == chess.WHITE_KING:
+                    self.enter_state('kingside castle')
                 else:
-                    self.play_sound('error')
-                    self.enter_state('wait')
+                    self.enter_state('move')
+            else:
+                self.play_sound('error')
+                self.enter_state('wait')
 
     def update_game_move (self):
         assert self.selected_sprite and self.selected_start and self.selected_end
@@ -543,7 +579,6 @@ class Game:
         if self.move_steps > 0:
             self.move_steps -= 1
         else:
-            self.play_sound('game over')
             self.enter_state('game over')
 
     def update_transition (self): 
@@ -723,7 +758,6 @@ def char_to_tile (char):
     return 256 + order.index(char)
 
 def main ():
-    sys.setrecursionlimit(100)
     pygame.init()
     screen = display_init()
     spritesheet = pygame.image.load('spritesheet.png').convert_alpha()
