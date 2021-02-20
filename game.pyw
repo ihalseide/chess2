@@ -10,7 +10,6 @@ SCALE = 2
 FPS = 30 # Frames Per Seconds
 CORNER_X, CORNER_Y = 64, 56
 GRID_SIZE = 16
-MESSAGE_X, MESSAGE_Y = 40, 32 
 JAIL_START_X, JAIL_END_X = 200, 248
 BLACK_JAIL_Y = 200
 WHITE_JAIL_Y = 40
@@ -114,16 +113,19 @@ class Game:
         message = self.get_message() 
         if message != self.message:
             self.message = message
-            self.create_message_sprites()
+            if self.state == 'game over':
+                self.create_message_sprites(40, 32)
+            else:
+                self.create_message_sprites(40, 16)
 
-    def create_message_sprites (self):
+    def create_message_sprites (self, x0, y0):
         self.message_sprites = []
-        x = MESSAGE_X
-        y = MESSAGE_Y
+        x = x0
+        y = y0
         for char in self.message:
             tile = char_to_tile(char)
             if x >= WIDTH - 16:
-                x = MESSAGE_X
+                x = x0
                 y += 16
             s = Sprite(tile, x, y, 1)
             x += 8
@@ -307,7 +309,7 @@ class Game:
                     self.num_players = 1
                 elif self.option_2_rect.collidepoint(xy):
                     self.num_players = 2
-                elif xy[0] == xy[1] == 0:
+                elif not self.debug and (xy[0] == xy[1] == 0):
                     self.play_sound('reveal')
                     self.debug = True
                 if self.num_players is not None:
@@ -660,10 +662,10 @@ class Game:
                 draw_tile(self.screen, self.spritesheet, sprite.tile, sprite.x, sprite.y, sprite.size)
             # Message character sprites
             self.draw_message()
-            self.display_number(self.black_minutes, 104, 8)
-            self.display_number(self.black_seconds, 128, 8)
-            self.display_number(self.white_minutes, 104, 224)
-            self.display_number(self.white_seconds, 128, 224)
+            self.display_number(self.black_minutes, 104, 32)
+            self.display_number(self.black_seconds, 128, 32)
+            self.display_number(self.white_minutes, 104, 216)
+            self.display_number(self.white_seconds, 128, 216)
             # Resignation closing circle
             if self.state == 'resign': 
                 radius = self.move_steps * 4
