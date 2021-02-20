@@ -69,9 +69,11 @@ def minimax (board, depth, alpha, beta, is_maximizing_player):
 def ai_process (board, time_limit):
     start_time = time.time_ns()
     depth = 1
-    move = minimax_root(board, depth, is_maximizing_player=True) 
-    while (time.time_ns() - start_time) < time_limit:
-        depth += 1
+    last_time_taken = 0
+    move = None
+    while (time.time_ns() - start_time + last_time_taken) < time_limit:
         move = minimax_root(board, depth, is_maximizing_player=True) 
+        depth += 1
+        last_time_taken = time.time_ns() - start_time
     return (move, depth)
 
