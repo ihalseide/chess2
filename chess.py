@@ -1,7 +1,7 @@
 # This file contains the main code and logic behind the game of Chess 
 # Note: The King Pieces are also used to represent the teams as a whole
-# These constants use these line breaks to avoid mistakes,
-# since it is important that these constant numbers are correct
+
+# These piece constants must be these values for code to work properly
 EMPTY, \
 WHITE_PAWN, \
 WHITE_BISHOP, \
@@ -30,7 +30,6 @@ STANDARD_BOARD = [
         WHITE_PAWN, WHITE_PAWN, WHITE_PAWN, WHITE_PAWN, WHITE_PAWN, WHITE_PAWN, WHITE_PAWN, WHITE_PAWN,
         WHITE_ROOK, WHITE_KNIGHT, WHITE_BISHOP, WHITE_QUEEN, WHITE_KING, WHITE_BISHOP, WHITE_KNIGHT, WHITE_ROOK,
         ] 
-# Standard piece locations for castling
 QUEENS_ROOK_COL = 0
 KINGS_ROOK_COL = 7
 KING_COL = 4
