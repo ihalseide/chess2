@@ -5,8 +5,7 @@ import chess, chess_ai
 from backgrounds import *
 
 AI_TIME_LIMIT = 3000000000 # nanoseconds
-WIDTH, HEIGHT = 256, 240
-SCALE = 2
+WIDTH, HEIGHT = 800, 600
 FPS = 30 # Frames Per Seconds
 CORNER_X, CORNER_Y = 64, 56
 GRID_SIZE = 16
@@ -29,7 +28,7 @@ class Sprite:
         self.y = y
         self.size = size
 
-class ThreadedAI (threading.Thread):
+class AutoPlayer (threading.Thread):
 
     def __init__ (self, chess_board, time_limit):
         threading.Thread.__init__(self)
@@ -297,7 +296,7 @@ class Game:
                 print('state:', self.state, ', player #:', self.num_players)
         if self.state == 'menu':
             if event.type == pygame.MOUSEBUTTONDOWN:
-                xy = event.pos[0] // SCALE, event.pos[1] // SCALE
+                xy = event.pos
                 if self.trigger_option_0_rect.collidepoint(xy):
                     if not self.show_option_0:
                         self.set_background(MENU_BACKGROUND_2)
@@ -315,7 +314,7 @@ class Game:
                 if self.num_players is not None:
                     self.enter_state('transition')
             elif event.type == pygame.MOUSEMOTION:
-                xy = event.pos[0] // SCALE, event.pos[1] // SCALE
+                xy = event.pos
                 if self.show_option_0 and self.option_0_rect.collidepoint(xy):
                     self.cursor_y = 120
                 elif self.option_1_rect.collidepoint(xy):
@@ -326,7 +325,7 @@ class Game:
             pass
         else:
             if event.type == pygame.MOUSEBUTTONDOWN:
-                self.input_x, self.input_y = event.pos[0] // SCALE, event.pos[1] // SCALE
+                self.input_x, self.input_y = event.pos
                 self.input_is_fresh = True
 
     def move_sprite_on_board (self, sprite, row, col):
@@ -402,7 +401,7 @@ class Game:
                 self.ai_thread = None
         else:
             # Startup AI eval
-            self.ai_thread = ThreadedAI(self.chess_board.copy(), AI_TIME_LIMIT)
+            self.ai_thread = AutoPlayer(self.chess_board.copy(), AI_TIME_LIMIT)
             self.ai_thread.start()
 
     def update_game_wait_player (self):
@@ -750,7 +749,7 @@ def display_init ():
     icon = pygame.image.load('icon.png')
     pygame.display.set_icon(icon)
     pygame.display.set_caption('Chess')
-    return pygame.display.set_mode((SCALE * WIDTH, SCALE * HEIGHT))
+    return pygame.display.set_mode((WIDTH, HEIGHT))
 
 def game_quit ():
     pygame.quit()
@@ -762,8 +761,7 @@ def char_to_tile (char):
 def main ():
     pygame.init()
     screen = display_init()
-    spritesheet = pygame.image.load('spritesheet.png').convert_alpha()
-    screen2 = pygame.Surface((WIDTH * SCALE, HEIGHT * SCALE))
+    spritesheet = pygame.image.load('textures.png').convert_alpha()
     game = Game(screen, spritesheet)
     clock = pygame.time.Clock()
     while game.running:
@@ -776,9 +774,6 @@ def main ():
                 game.note_event(event)
         game.update()
         game.display()
-        small = screen.subsurface((0, 0, WIDTH, HEIGHT))
-        pygame.transform.scale(small, (WIDTH * SCALE, HEIGHT * SCALE), screen2)
-        screen.blit(screen2, (0, 0))
         pygame.display.update()
     game_quit()
 
