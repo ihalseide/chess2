@@ -5,31 +5,52 @@ import chess, chess_ai
 from backgrounds import *
 
 AI_TIME_LIMIT = 3000000000 # nanoseconds
-WIDTH, HEIGHT = 800, 600
-FPS = 30 # Frames Per Seconds
-CORNER_X, CORNER_Y = 64, 56
-GRID_SIZE = 16
-JAIL_START_X, JAIL_END_X = 200, 248
-BLACK_JAIL_Y = 200
-WHITE_JAIL_Y = 40
-GAME_OVER_TEXT = [
-        "you can now play as luigi",
-        "free play unlocked",
-        "all your base are belong to us",
-        "i'm king of the world!",
-        "i'll be back"
-        ]
+FPS = 30 # Frames per Second
+
+WIDTH, HEIGHT = 800, 600 # px
+SPRITE_TILE_SIZE = 16 # px
+
+BOARD_GRID_SIZE = 32 # px
+BOARD_X, BOARD_Y = (WIDTH - 8 * BOARD_GRID_SIZE)//2, 176 # px
+
+JAIL_START_X = BOARD_X # px
+JAIL_END_X = BOARD_X + 8 * BOARD_GRID_SIZE # px
+BLACK_JAIL_Y = BOARD_Y + (9 * BOARD_GRID_SIZE) # px
+WHITE_JAIL_Y = BOARD_Y - 2 * BOARD_GRID_SIZE # px
+
+GAME_OVER_TEXT = (
+        'All your base are belong to us',
+        'All your king are belong to us',
+        'All your square are belong to us',
+        'Free play unlocked',
+        'I\'ll be back',
+        'I\'m king of the world',
+        'You can now play as Luigi',
+        'You can run but you can\'t hide',
+        )
+
+SOUND_NAMES = (
+    'check',
+    'checkmate',
+    'error',
+    'move',
+    'promote',
+    'can promote',
+    'capture',
+    'castle',
+    'resign',
+    'reveal',
+    'game over'
+)
 
 class Sprite:
-
-    def __init__(self, tile, x, y, size=1):
-        self.tile = tile
+    def __init__(self, image, x, y, size=1):
+        self.image = image
         self.x = x
         self.y = y
         self.size = size
 
 class AutoPlayer (threading.Thread):
-
     def __init__ (self, chess_board, time_limit):
         threading.Thread.__init__(self)
         self.chess_board = chess_board
@@ -40,22 +61,84 @@ class AutoPlayer (threading.Thread):
     def run (self):
         self.result, self.depth = chess_ai.ai_process(self.chess_board, self.time_limit)
 
+
 class Game:
+    valid_states = (
+        'menu',
+        'transition',
+        'play',
+        'wait',
+        'move',
+        'promote',
+        'queenside castle',
+        'kingside castle',
+        'mate',
+        'resign',
+        'choose team',
+        'game over'
+    )
+
+    play_states = (
+        'play',
+        'wait',
+        'move',
+        'promote',
+        'queenside castle', 
+        'kingside castle',
+        'mate',
+        'castle the rook',
+        'resign',
+        'choose team'
+    )
 
     def __init__ (self, screen, spritesheet):
-        self.debug = False
         self.screen = screen
         self.spritesheet = spritesheet
+
         self.running = True
-        self.state = 'menu'
-        self.valid_states = ('menu', 'transition', 'play', 'wait', 'move', 'promote', 'queenside castle',
-                'kingside castle', 'mate', 'resign', 'choose team', 'game over')
+        self.debug = False
+        self.done = False
+        self.num_players = None
+        self.pieces = None
+        self.theme = 2
+        assert self.theme in range(3)
+
+        self.message_x, self.message_y = 100, 20
+        self.message = ''
+
+        self.init_textures()
         self.init_sounds()
-        self.enter_state(self.state)
+
+        self.init_chess()
+
+        self.enter_state('menu')
+
+    def create_background(self, array):
+        new_surf = pygame.Surface((WIDTH, HEIGHT))
+        surf_width = WIDTH // SPRITE_TILE_SIZE
+
+        for i, tile_id in enumerate(array):
+            x = SPRITE_TILE_SIZE * (i % surf_width)
+            y = SPRITE_TILE_SIZE * (i // surf_width)
+            img = self.get_sprite_at(y, x)
+            new_surf.blit(img, (x, y))
+
+        return new_surf
+
+
+    def init_textures (self): 
+        self.menu_background = self.create_background(MENU_BACKGROUND)
+        self.transition_background = self.create_background(TRANSITION_BACKGROUND)
+        self.game_background = self.create_background(GAME_BACKGROUND)
+
+        self.text_surface = self.spritesheet.subsurface((0, 240, 256, 16))
+        self.text_surface.set_colorkey((0, 0, 0)) # black
+        self.message_surface = self.create_text('chess', 160, 10) 
+
 
     def is_play_state (self, state):
-        return state in ('play', 'wait', 'move', 'promote', 'queenside castle',
-                'kingside castle', 'mate', 'castle the rook', 'resign', 'choose team')
+        return state in self.play_states
+
 
     def init_chess (self): 
         self.chess_board = chess.Game()
@@ -63,81 +146,67 @@ class Game:
         self.white_is_ai = False
         self.ai_thread = None
 
-    def init_message (self):
-        self.message = None
-        self.message_sprites = []
-        self.update_message()
     
     def get_message (self):
         assert self.state in self.valid_states
         is_white = self.chess_board.get_current_team() == chess.WHITE_KING
         state = self.state
-        if state == 'game over':
+
+        if self.theme == 1:
+            if is_white:
+                name = 'USSR'
+            else:
+                name = 'USA'
+        else:
+            if is_white:
+                name = 'white'
+            else:
+                name = 'black'
+
+        if 'game over' == state:
             return random.choice(GAME_OVER_TEXT)
-        if state == 'choose team':
+        if 'choose team' == state:
             return 'select the pieces to lead' 
-        elif state == 'promote':
-            if is_white:
-                return 'white# pawn promotion'
+        elif 'promote' == state:
+            return '%s pawn promotion' % name
+        elif 'mate' == state or 'resign' == state:
+            if self.chess_winner in (chess.WHITE_KING, chess.BLACK_KING):
+                return 'checkmate'
             else:
-                return 'black$ pawn promotion'
-        elif state == 'mate' or state == 'resign':
-            winner = self.chess_winner
-            if winner == chess.WHITE_KING:
-                return 'white# checkmates black$!'
-            elif winner == chess.BLACK_KING:
-                return 'black$ checkmates white#!'
+                return 'stalemate'
+        elif 'wait' == state:
+            if self.chess_board.move_num == 0:
+                return '%s moves first' % name
+            elif self.chess_board.is_king_in_check(self.chess_board.get_current_team()):
+                return '%s is in check' % name
             else:
-                if self.chess_board.is_king_in_stalemate(chess.WHITE_KING):
-                    return 'white# is in stalemate'
-                elif self.chess_board.is_king_in_stalemate(chess.BLACK_KING):
-                    return 'black$ is in stalemate'
-                else:
-                    return 'game ended'
-        elif state == 'wait':
-            if is_white:
-                if self.chess_board.is_king_in_check(chess.WHITE_KING):
-                    return 'white# is in check'
-                elif self.chess_board.move_num == 0:
-                    return 'white# to make 1st move'
-                else:
-                    return 'white# to move'
-            else:
-                if self.chess_board.is_king_in_check(chess.BLACK_KING):
-                    return 'black$ is in check'
-                else:
-                    return 'black$ to move'
+                return '%s to move' % name
+        else:
+            return ''
+
 
     def update_message (self):
         message = self.get_message() 
         if message != self.message:
             self.message = message
-            if self.state == 'game over':
-                self.create_message_sprites(40, 32)
-            else:
-                self.create_message_sprites(40, 16)
+            self.message_surface = self.create_text(message, width=200, height=100)
 
-    def create_message_sprites (self, x0, y0):
-        self.message_sprites = []
-        x = x0
-        y = y0
-        for char in self.message:
-            tile = char_to_tile(char)
-            if x >= WIDTH - 16:
-                x = x0
-                y += 16
-            s = Sprite(tile, x, y, 1)
-            x += 8
-            self.message_sprites.append(s)
+
+    def create_text (self, text, width, height):
+        surf = pygame.Surface((width, height))
+        surf.set_colorkey((0, 0, 0))
+        self.draw_text(surf, text, 0, 0, width, height) 
+        return surf
+
 
     def init_sounds (self):
-        names = ['check', 'checkmate', 'error', 'move', 'promote', 'can promote',
-                'capture', 'castle', 'resign', 'reveal', 'game over']
         sound = lambda name: pygame.mixer.Sound(os.path.join('sound', name))
-        self.sounds = {name: sound(name + '.wav') for name in names}
+        self.sounds = {name: sound(name + '.wav') for name in SOUND_NAMES}
+
 
     def play_sound (self, name):
         self.sounds[name].play()
+
 
     def init_timers (self):
         self.white_ticks = 0
@@ -147,9 +216,11 @@ class Game:
         self.black_seconds = 0
         self.black_minutes = 0
 
+
     def init_capturing_area (self):
         self.black_jail_x, self.black_jail_y = JAIL_START_X, BLACK_JAIL_Y
         self.white_jail_x, self.white_jail_y = JAIL_START_X, WHITE_JAIL_Y
+
 
     def init_movement (self): 
         # Input
@@ -165,11 +236,12 @@ class Game:
         self.moving_dx = None
         self.moving_dy = None
 
+
     def enter_state (self, state):
         assert state in self.valid_states
         self.state = state
         if state == 'menu':
-            self.set_background(MENU_BACKGROUND)
+            self.background = self.menu_background
             self.num_players = None
             self.show_option_0 = False
             self.trigger_option_0_rect = pygame.Rect(72, 224, 8, 8)
@@ -180,16 +252,16 @@ class Game:
         elif state == 'transition': 
             self.move_steps = 100
             self.state = 'transition'
-            self.set_background(TRANSITION_BACKGROUND)
+            self.background = self.transition_background
             self.init_movement()
             self.init_chess()
             self.init_timers()
             self.init_capturing_area()
             self.init_pieces()
             self.highlight_sprites = []
-            self.init_message()
+            self.update_message()
         elif state == 'play':
-            self.set_background(GAME_BACKGROUND)
+            self.background = self.game_background
             if self.num_players == 1:
                 self.enter_state('choose team')
             else:
@@ -239,7 +311,7 @@ class Game:
         elif state in ('queenside castle', 'kingside castle'):
             assert self.selected_sprite and self.selected_start and self.selected_end 
             team = chess.get_current_team(self.chess_board.move_num)
-            king_square = self.chess_board.find_piece(team)
+            king_square = self.chess_board.find_king(team)
             can_castle = (
                     (state == 'kingside castle' and self.chess_board.can_castle_kingside(*king_square))
                     or
@@ -263,13 +335,13 @@ class Game:
             self.overlay_surf = pygame.Surface((WIDTH, HEIGHT))
             self.overlay_surf.set_colorkey((255, 255, 255))
             losing_king = self.chess_board.get_current_team()
-            losing_coords = self.chess_board.find_piece(losing_king)
+            losing_coords = self.chess_board.find_king(losing_king)
             king_sprite = self.get_sprite_at(*losing_coords)
             self.target_x, self.target_y = king_sprite.x + 8, king_sprite.y + 8
         elif state == 'game over': 
             self.move_steps = 180 
             self.play_sound('game over')
-            self.set_background(GAME_OVER_BACKGROUND)
+            self.background = self.transition_background
             self.update_message()
         else:
             # If this point is reached, there is a typo in the above IF statements
@@ -281,9 +353,10 @@ class Game:
             for col in range(8):
                 piece = self.chess_board.get(row, col)
                 if piece != chess.EMPTY:
-                    tile = get_piece_tile(piece)
+                    rect = self.get_piece_spot(piece)
+                    image = self.spritesheet.subsurface(rect)
                     x, y = board_to_screen(row, col)
-                    new = Sprite(tile, x, y, size=2)
+                    new = Sprite(image, x, y, size=2)
                     new.row = row
                     new.col = col
                     new.piece = piece
@@ -299,7 +372,6 @@ class Game:
                 xy = event.pos
                 if self.trigger_option_0_rect.collidepoint(xy):
                     if not self.show_option_0:
-                        self.set_background(MENU_BACKGROUND_2)
                         self.play_sound('reveal')
                     self.show_option_0 = True
                 elif self.show_option_0 and self.option_0_rect.collidepoint(xy):
@@ -335,28 +407,32 @@ class Game:
         sprite.x, sprite.y = x, y
 
     def remove_sprite (self, sprite):
+        delta = 32
+
         sprite.row = None
         sprite.col = None
+
         if chess.get_piece_team(sprite.piece) == chess.WHITE_KING:
             sprite.x = self.white_jail_x
             sprite.y = self.white_jail_y
-            self.white_jail_x += 16
+            self.white_jail_x += delta
             if self.white_jail_x >= JAIL_END_X:
                 self.white_jail_x = JAIL_START_X
-                self.white_jail_y += 16
+                self.white_jail_y -= delta
         else:
             sprite.x = self.black_jail_x
             sprite.y = self.black_jail_y
-            self.black_jail_x += 16
+            self.black_jail_x += delta
             if self.black_jail_x >= JAIL_END_X:
                 self.black_jail_x = JAIL_START_X
-                self.black_jail_y -= 16
+                self.black_jail_y += delta
 
     def update_timers (self): 
+        # Don't time before the first move is made by white
         if self.chess_board.move_num == 0:
-            # Don't time before the first move is made by white
             return
-        elif chess.get_current_team(self.chess_board.move_num) == chess.BLACK_KING:
+
+        if self.chess_board.get_current_team() == chess.BLACK_KING:
             self.black_ticks += 1
             if self.black_ticks >= FPS:
                 self.black_ticks = 0
@@ -372,6 +448,7 @@ class Game:
                 if self.white_seconds >= 60:
                     self.white_seconds = 0
                     self.white_minutes += 1
+
 
     def update_game_choose (self):
         assert self.num_players == 1
@@ -389,6 +466,7 @@ class Game:
                         self.white_is_ai = False
                         self.black_is_ai = True
                     self.enter_state('wait') 
+
 
     def update_game_wait_ai (self):
         if self.ai_thread is not None:
@@ -425,6 +503,7 @@ class Game:
                 # Clicking off of the board --> deselect everything
                 self.enter_state('wait')
 
+
     def update_game_wait (self): 
         # Validate selection of pieces and moves
         self.update_timers() 
@@ -450,6 +529,7 @@ class Game:
             else:
                 self.play_sound('error')
                 self.enter_state('wait')
+
 
     def update_game_move (self):
         assert self.selected_sprite and self.selected_start and self.selected_end
@@ -485,6 +565,7 @@ class Game:
                     self.play_sound('move')
                 self.enter_state('wait')
 
+
     def update_game_promote (self): 
         if self.is_ai_turn():
             self.play_sound('promote')
@@ -508,7 +589,8 @@ class Game:
                     promote_pawn = self.get_sprite_at(*self.selected_end)
                     new_piece = chess.role_as_team(role, current_team)
                     promote_pawn.piece = new_piece 
-                    promote_pawn.tile = get_piece_tile(promote_pawn.piece)
+                    rect = self.get_piece_spot(promote_pawn.piece)
+                    promote_pawn.image = self.spritesheet.subsurface(rect)
                     self.play_sound('promote')
                     self.chess_board.set(*self.selected_end, chess.role_as_team(role, current_team))
                     #self.turn += 1
@@ -517,6 +599,7 @@ class Game:
                     self.play_sound('error')
             else:
                 self.play_sound('error')
+
 
     def update_game_castle (self):
         assert self.state in ('queenside castle', 'kingside castle')
@@ -558,6 +641,7 @@ class Game:
                 self.chess_board.make_move(*self.selected_start, *self.selected_end)
                 self.enter_state('wait')
 
+
     def update_game_mate (self): 
         # Wait to play the checkmate sound
         if self.sound_delay is not None:
@@ -576,11 +660,13 @@ class Game:
                     if sprite.piece == losing_king:
                         self.enter_state('resign')
 
+
     def update_game_resign (self): 
         if self.move_steps > 0:
             self.move_steps -= 1
         else:
             self.enter_state('game over')
+
 
     def update_transition (self): 
         if self.move_steps > 0:
@@ -588,15 +674,13 @@ class Game:
         else:
             self.enter_state('play')
 
-    def update_menu (self):
-        pass
 
     def update_game_over (self):
         if self.move_steps > 0:
             self.move_steps -= 1
         else:
-            # Reset
-            self.__init__(self.screen, self.spritesheet)
+            self.done = True
+
 
     def update (self):
         s = self.state
@@ -619,52 +703,57 @@ class Game:
         elif 'transition' == s:
             self.update_transition()
         elif 'menu' == s:
-            self.update_menu()
+            pass
         elif 'game over' == s:
             self.update_game_over()
         else:
             raise ValueError('invalid game state: %s' %s) 
+
 
     def is_ai_turn (self):
         team = self.chess_board.get_current_team()
         return (team == chess.BLACK_KING and self.black_is_ai
                 or team == chess.WHITE_KING and self.white_is_ai)
 
+
     def create_highlight_sprites (self):
+        solid_x, solid_y = (224, 80)
+        solid = self.spritesheet.subsurface((solid_x, solid_y, 32, 32))
+        circle_x, circle_y = (192, 80)
+        circle = self.spritesheet.subsurface((circle_x, circle_y, 32, 32))
+
         if self.state == 'mate':
             losing_king = self.chess_board.get_current_team()
-            king_pos = self.chess_board.find_piece(losing_king)
-            self.highlight_sprites = [Sprite(330, *board_to_screen(*king_pos), 2)]
+            king_pos = self.chess_board.find_king(losing_king)
+            self.highlight_sprites = [Sprite(solid, *board_to_screen(*king_pos), 2)]
         else:
-            self.highlight_sprites = [Sprite(330, *board_to_screen(*self.selected_start), 2)]
-            moves = self.chess_board.get_piece_moves(*self.selected_start)
+            self.highlight_sprites = [Sprite(solid, *board_to_screen(*self.selected_start), 2)]
             team = self.chess_board.get_current_team()
-            for move in moves:
-                if self.chess_board.is_legal_move(team, *self.selected_start, *move):
-                    x, y = board_to_screen(*move)
-                    sprite = Sprite(328, x, y, 2)
-                    self.highlight_sprites.append(sprite)
+            for move in self.chess_board.get_legal_piece_moves(*self.selected_start):
+                x, y = board_to_screen(*move)
+                sprite = Sprite(circle, x, y, 2)
+                self.highlight_sprites.append(sprite)
+
 
     def draw_message (self, black=False): 
-        offset = 318 if black else 0
-        for sprite in self.message_sprites:
-            draw_tile(self.screen, self.spritesheet, sprite.tile + offset, sprite.x, sprite.y) 
+        self.screen.blit(self.message_surface, (self.message_x, self.message_y))
+
 
     def display (self):
-        self.display_background()
+        self.screen.blit(self.background, (0, 0))
         if self.is_play_state(self.state):
             # Highlighted squares
             for sprite in self.highlight_sprites:
-                draw_tile(self.screen, self.spritesheet, sprite.tile, sprite.x, sprite.y, 2)
+                self.screen.blit(sprite.image, (sprite.x, sprite.y))
             # Game piece sprites
             for sprite in self.pieces:
-                draw_tile(self.screen, self.spritesheet, sprite.tile, sprite.x, sprite.y, sprite.size)
+                self.screen.blit(sprite.image, (sprite.x, sprite.y))
             # Message character sprites
             self.draw_message()
-            self.display_number(self.black_minutes, 104, 32)
-            self.display_number(self.black_seconds, 128, 32)
-            self.display_number(self.white_minutes, 104, 216)
-            self.display_number(self.white_seconds, 128, 216)
+            self.draw_text(self.screen, str(self.black_minutes), 104, 32)
+            self.draw_text(self.screen, str(self.black_seconds), 128, 32)
+            self.draw_text(self.screen, str(self.white_minutes), 104, 216)
+            self.draw_text(self.screen, str(self.white_seconds), 128, 216)
             # Resignation closing circle
             if self.state == 'resign': 
                 radius = self.move_steps * 4
@@ -675,107 +764,116 @@ class Game:
             self.draw_message(black=True)
         elif self.state == 'menu':
             cursor = 257
-            draw_tile(self.screen, self.spritesheet, cursor, 80, self.cursor_y)
+            #self.draw_tile(self.screen, cursor, 80, self.cursor_y)
         elif self.state == 'transition':
-            tile = 316 + self.num_players 
-            draw_tile(self.screen, self.spritesheet, tile, 72, 56)
+            #tile = 316 + self.num_players 
+            #self.draw_tile(self.screen, tile, 72, 56)
+            pass
 
-    def set_background (self, array):
-        self.background = array.copy()
-
-    def display_background (self):
-        for i, tile in enumerate(self.background):
-            x = 8 * (i % 32)
-            y = 8 * (i // 32)
-            draw_tile(self.screen, self.spritesheet, tile, x, y)
 
     def get_sprite_at (self, row, col):
         for sprite in self.pieces:
             if sprite.row == row and sprite.col == col:
                 return sprite
 
-    def display_number (self, number, x, y):
-        string = str(number)
-        if len(string) < 2:
-            string = '0' + string
-        zero_tile = 284
-        order = '0123______456789'
-        for i, char in enumerate(string):
-            tile = zero_tile + order.index(char)
-            ix = x + i * 8
-            draw_tile(self.screen, self.spritesheet, tile, ix, y) 
-        
-def get_sprite (spritesheet, sprite_id, sprite_size):
-    x = 8 * (sprite_id % 32)
-    y = 8 * (sprite_id // 32)
-    size = sprite_size * 8
-    return spritesheet.subsurface((x, y, size, size))
 
-def get_piece_tile (piece):
-    i = 20
-    if chess.get_piece_team(piece) == chess.BLACK_KING:
-        i += 64
-    role = chess.get_piece_role(piece)
-    if role == chess.WHITE_BISHOP:
-        i += 2
-    elif role == chess.WHITE_KNIGHT:
-        i += 4
-    elif role == chess.WHITE_ROOK:
-        i += 6
-    elif role == chess.WHITE_QUEEN:
-        i += 8
-    elif role == chess.WHITE_KING:
-        i += 10
-    return i
+    def char_to_tile (self, char):
+        order = 'abcdefghijklmnopqrstuvwxyz0123456789-:!,.%@? _\''
+        i = order.index(char.lower())
+        x = (i * 8) % 256
+        y = 8 * (i // 32)
+        return self.text_surface.subsurface((x, y, 8, 8))
+
+
+    def draw_text (self, surf, text, x0, y0, x1, y1):
+        x, y = x0, y0
+        x_space, y_space = 8, 16
+
+        for char in text:
+            if x > x1 - x_space:
+                x = x0
+                y += y_space
+                if y > y1 - y_space:
+                    # Boundary is completely exceeded
+                    break
+
+            tile = self.char_to_tile(char)
+            surf.blit(tile, (x, y))
+            x += x_space 
+
+        return (x, y)
+
+
+    def get_piece_spot (self, piece):
+        order = (chess.WHITE_PAWN, chess.WHITE_BISHOP, chess.WHITE_KNIGHT,
+                chess.WHITE_ROOK, chess.WHITE_QUEEN, chess.WHITE_KING)
+
+        team = chess.get_piece_team(piece)
+        role = chess.get_piece_role(piece)
+        col = order.index(role)
+
+        # Theme #0 has smaller sprites than the others
+        if self.theme == 0:
+            row = 4
+            size = 16
+        else:
+            col *= 2
+            row = 5 + (self.theme - 1) * 4
+            size = 32
+
+        if team == chess.BLACK_KING:
+            # Theme #0 has sprites on the same row
+            if self.theme == 0:
+                col += 6
+            else:
+                row += 2
+                
+        result = (col * 16, row * 16, size, size)
+        return result
+
 
 def screen_to_board (x, y):
-    col = (x - CORNER_X) // GRID_SIZE
-    row = (y - CORNER_Y) // GRID_SIZE
+    col = (x - BOARD_X) // BOARD_GRID_SIZE
+    row = (y - BOARD_Y) // BOARD_GRID_SIZE
     if (col in range(8)) and (row in range(8)):
         return (row, col)
 
+
 def board_to_screen (row, col):
     if (col in range(8)) and (row in range(8)):
-        x = CORNER_X + col * GRID_SIZE
-        y = CORNER_Y + row * GRID_SIZE
+        x = BOARD_X + col * BOARD_GRID_SIZE
+        y = BOARD_Y + row * BOARD_GRID_SIZE
         return (x, y)
 
-def draw_tile (screen, spritesheet, tile, x, y, size=1):
-    img = get_sprite(spritesheet, tile, size)
-    screen.blit(img, (x, y))
-
-def display_init ():
-    pygame.display.init()
-    icon = pygame.image.load('icon.png')
-    pygame.display.set_icon(icon)
-    pygame.display.set_caption('Chess')
-    return pygame.display.set_mode((WIDTH, HEIGHT))
-
-def game_quit ():
-    pygame.quit()
-
-def char_to_tile (char):
-    order = '$#abcdefghijklmnopqrstuvwxyz0123______456789-:!,.%@? _\''
-    return 256 + order.index(char)
 
 def main ():
     pygame.init()
-    screen = display_init()
+    screen = pygame.display.set_mode((WIDTH, HEIGHT))
+    icon = pygame.image.load('icon.ico')
+    pygame.display.set_icon(icon)
+    pygame.display.set_caption('Chezz')
+
     spritesheet = pygame.image.load('textures.png').convert_alpha()
+
     game = Game(screen, spritesheet)
     clock = pygame.time.Clock()
+
     while game.running:
+        if game.done:
+            # Reset the game
+            game = Game(screen, spritesheet)
         clock.tick(FPS)
         for event in pygame.event.get():
+            game.note_event(event)
             if event.type == pygame.QUIT:
                 game.running = False
                 break
-            else:
-                game.note_event(event)
         game.update()
         game.display()
         pygame.display.update()
-    game_quit()
+
+    pygame.quit()
+
 
 if __name__ == '__main__':
     main()
