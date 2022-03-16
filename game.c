@@ -2,10 +2,20 @@
 #include <assert.h>
 #include <raylib.h>
 
+typedef enum GameState {
+} GameState;
+
 Texture2D spritesheet;
+
+GameState theState;
 
 void update () {
 
+}
+
+void drawSprite (int x, int y, int sheetX, int sheetY) {
+	// Get the sprite at sheetX, sheetY
+	// draw it
 }
 
 void draw () {
@@ -26,6 +36,7 @@ void init () {
 void loop () {
     while (!WindowShouldClose()) {
         update();
+
         BeginDrawing();
         draw();
         EndDrawing();
