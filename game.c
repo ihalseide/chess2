@@ -6,6 +6,7 @@
 #include "stb_ds.h"
 
 #define TILE_SIZE 16
+#define HI_COLOR (Color){ 210, 210, 10, 128 }
 
 #define abs(x) ((x > 0)? x : -x)
 
@@ -52,6 +53,13 @@ NormalChess *theNormalChess = NULL;
 Vector2 theBoardOffset = (Vector2){ 30, 30 };
 //int theZoomScale = 2;
 Vector2 theClickStart;
+Vector2 *theHiSquares = NULL;
+
+void ClearTheHiSquares(void)
+{
+	arrfree(theHiSquares);
+	theHiSquares = NULL;
+}
 
 // Convert screen coordinates to Tile coordinates
 void ScreenToTile(int pX, int pY, int x0, int y0, int tileSize, int *tX, int *tY)
@@ -73,6 +81,21 @@ void ScreenSnapCoords(int pX, int pY, int x0, int y0, int tileSize, int *pX2, in
 	int tX, tY;
 	ScreenToTile(pX, pY, x0, y0, tileSize, &tX, &tY);
 	TileToScreen(tX, tY, x0, y0, tileSize, pX2, pY2);
+}
+
+// Convert screen coordinate to row and column for normal chess
+void ScreenToNormalChessPos(int pX, int pY, int x0, int y0, int tileSize,
+		int *row, int *col)
+{
+	int tx, ty;
+	ScreenToTile(pX, pY, x0, y0, tileSize, &tx, &ty); 
+	ty = 7 - ty;
+	assert(tx >= 0);
+	assert(tx <= 7);
+	assert(ty >= 0);
+	assert(ty <= 7);
+	*row = ty;
+	*col = tx;
 }
 
 NormalChessPiece *NormalChessPieceAlloc(NormalChessKind k, int row, int col)
@@ -168,8 +191,8 @@ void NormalChessDestroy(NormalChess *p)
 
 void DrawChessBoard(int x0, int y0, int tileSize, int width, int height)
 {
-	Color c1 = WHITE;
-	Color c2 = BLACK;
+	Color c1 = RAYWHITE;
+	Color c2 = (Color){ 40, 20, 40, 255 };
 	for (int x = 0; x < width; x++)
 	{
 		for (int y = 0; y < height; y++)
@@ -216,14 +239,22 @@ Rectangle NormalChessKindToTextureRect(NormalChessKind k)
 	return lookup[k];
 }
 
-void NormalChessDraw(NormalChess *game)
+// Note: argument arrHiSquares = dynamic array of hilighted square positions.
+void NormalChessDraw(NormalChess *game, Vector2 *arrHiSquares)
 {
 	int x0 = theBoardOffset.x;
 	int y0 = theBoardOffset.y;
 	DrawChessBoard(x0, y0, TILE_SIZE, 8, 8);
+	// Draw highlighted squares
+	for (int i = 0; i < arrlen(arrHiSquares); i++)
+	{
+		Vector2 pos = arrHiSquares[i];
+		int x, y;
+		TileToScreen(pos.x, 7 - pos.y, x0, y0, TILE_SIZE, &x, &y);
+		DrawRectangle(x, y, TILE_SIZE, TILE_SIZE, HI_COLOR);
+	}
 	// Draw pieces
-	int len = arrlen(game->arrPieces);
-	for (int i = 0; i < len; i++)
+	for (int i = 0; i < arrlen(game->arrPieces); i++)
 	{
 		NormalChessPiece p = *(game->arrPieces[i]);
 		Rectangle slice = NormalChessKindToTextureRect(p.kind);
@@ -392,31 +423,43 @@ void TestNormalChessMovesContains(void)
 	assert(NormalChessMovesContains(&p1, 6, 4));
 }
 
-void ScreenToNormalChessPos(int pX, int pY, int x0, int y0, int tileSize,
-		int *row, int *col)
-{
-	int tx, ty;
-	ScreenToTile(pX, pY, x0, y0, tileSize, &tx, &ty); 
-	ty = 7 - ty;
-	assert(tx >= 0);
-	assert(tx <= 7);
-	assert(ty >= 0);
-	assert(ty <= 7);
-	*row = ty;
-	*col = tx;
-}
-
 void UpdatePlay(void)
 {
 	int x0 = theBoardOffset.x;
 	int y0 = theBoardOffset.y;
+	Rectangle boardRect = (Rectangle){ x0, y0, 8 * TILE_SIZE, 8 * TILE_SIZE };
+
 	if (IsMouseButtonPressed(0))
 	{
 		theClickStart = GetMousePosition();
+		// Update the selected piece's available moves.
+		if (CheckCollisionPointRec(theClickStart, boardRect))
+		{
+			ClearTheHiSquares();
+
+			int startRow, startCol;
+			ScreenToNormalChessPos(theClickStart.x, theClickStart.y, x0, y0,
+					TILE_SIZE, &startRow, &startCol); 
+			NormalChessPiece *p = PiecesGetAt(theNormalChess->arrPieces,
+					startRow, startCol);
+			if (p)
+			{
+				for (int row = 0; row < 8; row++)
+				{
+					for (int col = 0; col < 8; col++)
+					{
+						if (NormalChessMovesContains(p, row, col))
+						{
+							Vector2 p = (Vector2) { col, row };
+							arrpush(theHiSquares, p);
+						}
+					}
+				}
+			}
+		}
 	}
 	else if (IsMouseButtonReleased(0))
 	{
-		Rectangle boardRect = (Rectangle){ x0, y0, 8 * TILE_SIZE, 8 * TILE_SIZE };
 		Vector2 clickEnd = GetMousePosition();
 		if (CheckCollisionPointRec(theClickStart, boardRect)
 				&& CheckCollisionPointRec(clickEnd, boardRect))
@@ -428,10 +471,16 @@ void UpdatePlay(void)
 					TILE_SIZE, &targetRow, &targetCol); 
 			NormalChessPiece *p = PiecesGetAt(theNormalChess->arrPieces,
 					startRow, startCol);
-			if (p && NormalChessMovesContains(p, targetRow, targetCol))
+			if (startRow == targetRow && startCol == targetCol)
 			{
+				// A piece was clicked on
+			}
+			else if (p && NormalChessMovesContains(p, targetRow, targetCol))
+			{
+				// A piece was dragged
 				PiecesDoCapture(theNormalChess->arrPieces, startRow, startCol,
 						targetRow, targetCol);
+				ClearTheHiSquares();
 			}
 		}
 	}
@@ -452,7 +501,7 @@ void Update(void) {
 void DrawPlay(void)
 {
 	ClearBackground(RAYWHITE);
-	NormalChessDraw(theNormalChess);
+	NormalChessDraw(theNormalChess, theHiSquares);
 }
 
 void Draw(void) {
@@ -482,7 +531,7 @@ int main(void) {
 
     const int screenWidth = 600;
     const int screenHeight = 480;
-    InitWindow(screenWidth, screenHeight, "Chezz");
+    InitWindow(screenWidth, screenHeight, "Chess 2");
     SetTargetFPS(30);
 
     theSpritesheet = LoadTexture("gfx/textures.png");
