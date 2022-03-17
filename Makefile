@@ -6,7 +6,7 @@ LIBS=-lraylib -lm -ldl -lpthread
 default: game
 
 game: game.c
-	$(CC) $(COpts) $^ -o $@ -L. $(LIBS)
+	$(CC) $(CFLAGS) $^ -o $@ -L. $(LIBS)
 
 %.o: %.c %.h
 	$(CC) $(CFLAGS) $(LFLAGS) -c $^ -L. $(LIBS)
