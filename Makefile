@@ -1,12 +1,12 @@
 CC=gcc
-CFLAGS=-Wall -g -std=c99 -I /usr/local/include/ -I.
-LFLAGS=-L/raylib/src -L/opt/vc/lii
-LIBS=-lraylib 
+CFLAGS=-Wall -g -std=c99
+LFLAGS=
+LIBS=-lraylib -lm -ldl -lpthread
 
 default: game
 
 game: game.c
-	$(CC) $(CFLAGS) $(LFLAGS) game.c -o game $(LIBS)
+	$(CC) $(COpts) $^ -o $@ -L. $(LIBS)
 
-#%.o: %.c %.h
-#	$(CC) $(CFLAGS) $(LFLAGS) .....
+%.o: %.c %.h
+	$(CC) $(CFLAGS) $(LFLAGS) -c $^ -L. $(LIBS)
