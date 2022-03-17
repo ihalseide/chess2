@@ -46,19 +46,25 @@ typedef struct NormalChess
 	NormalChessPiece **arrPieces; // dynamic array
 } NormalChess;
 
-Texture2D theSpritesheet;
-GameState theState = GS_PLAY;
-int ticks = 0;
-NormalChess *theNormalChess = NULL;
-Vector2 theBoardOffset = (Vector2){ 30, 30 };
-//int theZoomScale = 2;
-Vector2 theClickStart;
-Vector2 *theHiSquares = NULL;
-
-void ClearTheHiSquares(void)
+typedef struct ViewContext
 {
-	arrfree(theHiSquares);
-	theHiSquares = NULL;
+	Texture2D spritesheet;
+} ViewContext;
+
+typedef struct GameContext
+{
+	int ticks;
+	GameState state;
+	Vector2 clickStart; // pixels
+	NormalChess *normalChess;
+	Vector2 boardOffset; // pixels
+	Vector2 *arrHiSquares; // board coordinates
+} GameContext;
+
+void ClearTheHiSquares(GameContext *game)
+{
+	arrfree(game->arrHiSquares);
+	game->arrHiSquares = NULL;
 }
 
 // Convert screen coordinates to Tile coordinates
@@ -240,28 +246,28 @@ Rectangle NormalChessKindToTextureRect(NormalChessKind k)
 }
 
 // Note: argument arrHiSquares = dynamic array of hilighted square positions.
-void NormalChessDraw(NormalChess *game, Vector2 *arrHiSquares)
+void DrawNormalChess(const GameContext *game, ViewContext *vis)
 {
-	int x0 = theBoardOffset.x;
-	int y0 = theBoardOffset.y;
+	int x0 = game->boardOffset.x;
+	int y0 = game->boardOffset.y;
 	DrawChessBoard(x0, y0, TILE_SIZE, 8, 8);
 	// Draw highlighted squares
-	for (int i = 0; i < arrlen(arrHiSquares); i++)
+	for (int i = 0; i < arrlen(game->arrHiSquares); i++)
 	{
-		Vector2 pos = arrHiSquares[i];
+		Vector2 pos = game->arrHiSquares[i];
 		int x, y;
 		TileToScreen(pos.x, 7 - pos.y, x0, y0, TILE_SIZE, &x, &y);
 		DrawRectangle(x, y, TILE_SIZE, TILE_SIZE, HI_COLOR);
 	}
 	// Draw pieces
-	for (int i = 0; i < arrlen(game->arrPieces); i++)
+	for (int i = 0; i < arrlen(game->normalChess->arrPieces); i++)
 	{
-		NormalChessPiece p = *(game->arrPieces[i]);
+		NormalChessPiece p = *(game->normalChess->arrPieces[i]);
 		Rectangle slice = NormalChessKindToTextureRect(p.kind);
 		int x = p.col * TILE_SIZE + x0;
 		int y = (7 - p.row) * TILE_SIZE + y0; // 0th row is at the bottom
 		Vector2 pos = (Vector2){ x, y };
-		DrawTextureRec(theSpritesheet, slice, pos, WHITE);
+		DrawTextureRec(vis->spritesheet, slice, pos, WHITE);
 	}
 }
 
@@ -423,24 +429,24 @@ void TestNormalChessMovesContains(void)
 	assert(NormalChessMovesContains(&p1, 6, 4));
 }
 
-void UpdatePlay(void)
+void UpdatePlay(GameContext *game)
 {
-	int x0 = theBoardOffset.x;
-	int y0 = theBoardOffset.y;
+	int x0 = game->boardOffset.x;
+	int y0 = game->boardOffset.y;
 	Rectangle boardRect = (Rectangle){ x0, y0, 8 * TILE_SIZE, 8 * TILE_SIZE };
 
 	if (IsMouseButtonPressed(0))
 	{
-		theClickStart = GetMousePosition();
+		game->clickStart = GetMousePosition();
 		// Update the selected piece's available moves.
-		if (CheckCollisionPointRec(theClickStart, boardRect))
+		if (CheckCollisionPointRec(game->clickStart, boardRect))
 		{
-			ClearTheHiSquares();
+			ClearTheHiSquares(game);
 
 			int startRow, startCol;
-			ScreenToNormalChessPos(theClickStart.x, theClickStart.y, x0, y0,
+			ScreenToNormalChessPos(game->clickStart.x, game->clickStart.y, x0, y0,
 					TILE_SIZE, &startRow, &startCol); 
-			NormalChessPiece *p = PiecesGetAt(theNormalChess->arrPieces,
+			NormalChessPiece *p = PiecesGetAt(game->normalChess->arrPieces,
 					startRow, startCol);
 			if (p)
 			{
@@ -451,7 +457,7 @@ void UpdatePlay(void)
 						if (NormalChessMovesContains(p, row, col))
 						{
 							Vector2 p = (Vector2) { col, row };
-							arrpush(theHiSquares, p);
+							arrpush(game->arrHiSquares, p);
 						}
 					}
 				}
@@ -461,15 +467,15 @@ void UpdatePlay(void)
 	else if (IsMouseButtonReleased(0))
 	{
 		Vector2 clickEnd = GetMousePosition();
-		if (CheckCollisionPointRec(theClickStart, boardRect)
+		if (CheckCollisionPointRec(game->clickStart, boardRect)
 				&& CheckCollisionPointRec(clickEnd, boardRect))
 		{
 			int startRow, startCol, targetRow, targetCol;
-			ScreenToNormalChessPos(theClickStart.x, theClickStart.y, x0, y0,
+			ScreenToNormalChessPos(game->clickStart.x, game->clickStart.y, x0, y0,
 					TILE_SIZE, &startRow, &startCol); 
 			ScreenToNormalChessPos(clickEnd.x, clickEnd.y, x0, y0,
 					TILE_SIZE, &targetRow, &targetCol); 
-			NormalChessPiece *p = PiecesGetAt(theNormalChess->arrPieces,
+			NormalChessPiece *p = PiecesGetAt(game->normalChess->arrPieces,
 					startRow, startCol);
 			if (startRow == targetRow && startCol == targetCol)
 			{
@@ -478,37 +484,37 @@ void UpdatePlay(void)
 			else if (p && NormalChessMovesContains(p, targetRow, targetCol))
 			{
 				// A piece was dragged
-				PiecesDoCapture(theNormalChess->arrPieces, startRow, startCol,
+				PiecesDoCapture(game->normalChess->arrPieces, startRow, startCol,
 						targetRow, targetCol);
-				ClearTheHiSquares();
+				ClearTheHiSquares(game);
 			}
 		}
 	}
 }
 
-void Update(void) {
-	switch (theState)
+void Update(GameContext *game) {
+	switch (game->state)
 	{
 		case GS_PLAY:
-			UpdatePlay();
+			UpdatePlay(game);
 			break;
 		default:
 			break;
 	}
-	ticks++;
+	game->ticks++;
 }
 
-void DrawPlay(void)
+void DrawPlay(const GameContext *game, ViewContext *vis)
 {
 	ClearBackground(RAYWHITE);
-	NormalChessDraw(theNormalChess, theHiSquares);
+	DrawNormalChess(game, vis);
 }
 
-void Draw(void) {
-	switch (theState)
+void Draw(const GameContext *game, ViewContext *vis) {
+	switch (game->state)
 	{
 		case GS_PLAY:
-			DrawPlay();
+			DrawPlay(game, vis);
 			break;
 		default:
 			ClearBackground(RAYWHITE);
@@ -534,14 +540,25 @@ int main(void) {
     InitWindow(screenWidth, screenHeight, "Chess 2");
     SetTargetFPS(30);
 
-    theSpritesheet = LoadTexture("gfx/textures.png");
+	GameContext game = (GameContext)
+	{
+		.state = GS_PLAY,
+		.ticks = 0,
+		.clickStart = (Vector2) { -1, -1 },
+		.normalChess = NormalChessInit(),
+		.boardOffset = (Vector2) { 50, 100 },
+		.arrHiSquares = NULL,
+	};
 
-	theNormalChess = NormalChessInit();
+	ViewContext vis = (ViewContext)
+	{
+		.spritesheet = LoadTexture("gfx/textures.png"),
+	};
 
     while (!WindowShouldClose()) {
-        Update();
+        Update(&game);
         BeginDrawing();
-        Draw();
+        Draw(&game, &vis);
         EndDrawing();
     }
 
