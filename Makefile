@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-Wall -Wextra -std=c11 -I /usr/local/include/ -I.
+CFLAGS=-Wall -Wextra -std=c99 -I /usr/local/include/ -I.
 LFLAGS=-L/raylib/src -L/opt/vc/lii
 LIBS=-lraylib 
 
