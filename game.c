@@ -1,7 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
-#include <raylib.h>
+
+#include "raylib.h"
 #define STB_DS_IMPLEMENTATION
 #include "stb_ds.h"
 
@@ -307,6 +308,21 @@ void DrawNormalChess(const GameContext *game, ViewContext *vis)
 		Vector2 pos = (Vector2){ x, y };
 		DrawTextureRec(vis->spritesheet, slice, pos, WHITE);
 	}
+	// Debug info:
+	//char msg[100];
+	//int x1 = 15, y1 = 5;
+	//snprintf(msg, sizeof(msg), "whiteKingHasMoved:%d", game->normalChess->whiteKingHasMoved);
+	//DrawText(msg, x1, y1, 17, WHITE);
+	//snprintf(msg, sizeof(msg), "whiteKingsRookHasMoved:%d", game->normalChess->whiteKingsRookHasMoved);
+	//DrawText(msg, x1, y1 + 17, 16, WHITE);
+	//snprintf(msg, sizeof(msg), "whiteQueensRookHasMoved:%d", game->normalChess->whiteQueensRookHasMoved);
+	//DrawText(msg, x1, y1 + 17*2, 16, WHITE);
+	//snprintf(msg, sizeof(msg), "blackKingHasMoved:%d", game->normalChess->blackKingHasMoved);
+	//DrawText(msg, x1, y1 + 17*3, 16, WHITE);
+	//snprintf(msg, sizeof(msg), "blackKingsRookHasMoved:%d", game->normalChess->blackKingsRookHasMoved);
+	//DrawText(msg, x1, y1 + 17*4, 16, WHITE);
+	//snprintf(msg, sizeof(msg), "blackQueensRookHasMoved:%d", game->normalChess->blackQueensRookHasMoved);
+	//DrawText(msg, x1, y1 + 17*5, 16, WHITE);
 }
 
 // Removes any pieces with the given row and column.
@@ -323,6 +339,48 @@ void PiecesRemovePieceAt(NormalChessPiece **arrPieces, int row, int col)
 			arrdelswap(arrPieces, i);
 		}
 	}
+}
+
+NormalChessKind PieceKingOf(NormalChessPiece *p)
+{
+	assert(p);
+	switch (p->kind)
+	{
+		case WHITE_KING:
+		case WHITE_QUEEN:
+		case WHITE_ROOK:
+		case WHITE_BISHOP:
+		case WHITE_KNIGHT:
+		case WHITE_PAWN:
+			return WHITE_KING;
+		case BLACK_KING:
+		case BLACK_QUEEN:
+		case BLACK_ROOK:
+		case BLACK_BISHOP:
+		case BLACK_KNIGHT:
+		case BLACK_PAWN:
+			return BLACK_KING;
+		default:
+			assert(0 && "invalid piece kind");
+	}
+}
+
+// Find the king piece for a given team member.
+NormalChessPiece *PiecesFindKing(NormalChessPiece **arrPieces, NormalChessPiece *member)
+{
+	assert(arrPieces);
+	assert(member);
+	NormalChessKind k = PieceKingOf(member);
+	for (int i = 0; i < arrlen(arrPieces); i++)
+	{
+		NormalChessPiece *p = arrPieces[i];
+		assert(p);
+		if (p->kind == k)
+		{
+			return p;
+		}
+	}
+	return NULL;
 }
 
 // Get the first piece found in the array with the given location.
@@ -542,19 +600,35 @@ void NormalChessCastleMove(NormalChess *chess, NormalChessPiece *p, int targetCo
 	{
 		assert(0 && "unreachable");
 	}
-	PiecesDoMove(chess->arrPieces, p->row, rookStartCol, p->row, rookTargetCol);
-	// Update castling flag
+	// Update castling flags
 	switch (p->kind)
 	{
 		case WHITE_KING:
 			chess->whiteKingHasMoved = 1;
+			if (targetCol > p->col)
+			{
+				chess->whiteKingsRookHasMoved = 1;
+			}
+			else
+			{
+				chess->whiteQueensRookHasMoved = 1;
+			}
 			break;
 		case BLACK_KING:
 			chess->blackKingHasMoved = 1;
+			if (targetCol > p->col)
+			{
+				chess->blackKingsRookHasMoved = 1;
+			}
+			else
+			{
+				chess->blackQueensRookHasMoved = 1;
+			}
 			break;
 		default:
 			assert(0 && "unreachable");
 	}
+	PiecesDoMove(chess->arrPieces, p->row, rookStartCol, p->row, rookTargetCol);
 }
 
 void NormalChessPawnMove(NormalChess *chess, NormalChessPiece *p, int targetRow, int targetCol)
@@ -593,8 +667,46 @@ void NormalChessPawnMove(NormalChess *chess, NormalChessPiece *p, int targetRow,
 	}
 }
 
+// Update any flags that result from moving the king or rooks (for castling).
+void NormalChessUpdateFlagsFromMove(NormalChess *chess, NormalChessPiece *p, int startCol)
+{
+	assert(chess);
+	assert(p);
+	switch (p->kind)
+	{
+		case WHITE_KING:
+			chess->whiteKingHasMoved = 1;
+			break;
+		case BLACK_KING:
+			chess->blackKingHasMoved = 1;
+			break;
+		case WHITE_ROOK:
+			if (startCol == 7)
+			{
+				chess->whiteKingsRookHasMoved = 1;
+			}
+			else if (startCol == 0)
+			{
+				chess->whiteQueensRookHasMoved = 1;
+			}
+			break;
+		case BLACK_ROOK:
+			if (startCol == 7)
+			{
+				chess->blackKingsRookHasMoved = 1;
+			}
+			else if (startCol == 0)
+			{
+				chess->blackQueensRookHasMoved = 1;
+			}
+			break;
+		default:
+			break;
+	}
+}
+
 // Handle normal moves and special moves like castling.
-void PiecesDoFullMove(NormalChess *chess, int startRow, int startCol,
+void NormalChessDoFullMove(NormalChess *chess, int startRow, int startCol,
 		int targetRow, int targetCol)
 {
 	assert(chess);
@@ -619,6 +731,8 @@ void PiecesDoFullMove(NormalChess *chess, int startRow, int startCol,
 	}
 	// Do the normal piece movement
 	PiecesDoCapture(chess->arrPieces, startRow, startCol, targetRow, targetCol);
+	// Update any flags that result from moving the king or rooks (for castling).
+	NormalChessUpdateFlagsFromMove(chess, p, startCol);
 }
 
 int PiecesMoveIsBlocked(NormalChessPiece **arrPieces, NormalChessPiece *p, int targetRow, int targetCol)
@@ -640,7 +754,7 @@ int PiecesMoveIsBlocked(NormalChessPiece **arrPieces, NormalChessPiece *p, int t
 				int dCol = sign(targetCol - p->col);
 				int row = p->row + dRow;
 				int col = p->col + dCol;
-				while ((row != targetRow || col != targetCol)
+				while (!(row == targetRow && col == targetCol)
 						&& row >= 0 && row <= 7
 						&& col >= 0 && col <= 7
 						&& !PiecesGetAt(arrPieces, row, col))
@@ -654,6 +768,41 @@ int PiecesMoveIsBlocked(NormalChessPiece **arrPieces, NormalChessPiece *p, int t
 			// A non-sliding piece -> not blocked
 			return 0;
 	}
+}
+
+int PiecesIsPiecePinned(NormalChessPiece **arrPieces, NormalChessPiece *p, int targetRow, int targetCol)
+{
+	NormalChessPiece *king = PiecesFindKing(arrPieces, p);
+	if (!king)
+	{
+		// This is unusual, but not an error
+		return 0;
+	}
+	int originalRow = p->row;
+	int originalCol = p->col;
+	// Temporarily move the piece to where it want to go to see "what if".
+	p->row = targetRow;
+	p->col = targetCol;
+	// Check if any of the enemy pieces may capture the king.
+	int isPinned = 0;
+	for (int i = 0; i < arrlen(arrPieces); i++)
+	{
+		NormalChessPiece *other = arrPieces[i];
+		assert(other);
+		// Note: special moves cannot even capture the king,
+		// so there is no need to check them.
+		if (PieceKingOf(other) != king->kind
+				&& NormalChessMovesContains(other, king->row, king->col)
+				&& !PiecesMoveIsBlocked(arrPieces, other, king->row, king->col))
+		{
+			isPinned = 1;
+			break;
+		}
+	}
+	// Restore the pieces original position.
+	p->row = originalRow;
+	p->col = originalCol;
+	return isPinned;
 }
 
 // All valid moves!
@@ -682,6 +831,11 @@ Vector2 *NormalChessCreatePieceMoveList(NormalChess *c, NormalChessPiece *p)
 			{
 				continue;
 			}
+			// A piece may not move if it is pinned to the king
+			if (PiecesIsPiecePinned(c->arrPieces, p, row, col))
+			{
+				continue;
+			}
 			Vector2 colRow = (Vector2){ col, row };
 			arrpush(result, colRow);
 		}
@@ -705,24 +859,19 @@ void UpdatePlay(GameContext *game)
 	if (IsMouseButtonPressed(0))
 	{
 		game->clickStart = GetMousePosition();
-		// Update the selected piece's available moves.
+		// If clicking on a piece, update the selected piece's available moves.
 		if (CheckCollisionPointRec(game->clickStart, boardRect))
 		{
-			ClearMoveSquares(game);
-
 			int startRow, startCol;
-			ScreenToNormalChessPos(game->clickStart.x, game->clickStart.y, x0, y0,
-					TILE_SIZE, &startRow, &startCol); 
-			NormalChessPiece *p = PiecesGetAt(game->normalChess->arrPieces,
-					startRow, startCol);
+			ScreenToNormalChessPos(game->clickStart.x, game->clickStart.y, x0, y0, TILE_SIZE, &startRow, &startCol); 
+			NormalChessPiece *p = PiecesGetAt(game->normalChess->arrPieces, startRow, startCol);
+			game->draggedPiece = p;
+			ClearMoveSquares(game);
 			if (p)
 			{
 				UpdateMoveSquares(game, p);
-				game->draggedPiece = p;
-				return;
 			}
 		}
-		game->draggedPiece = NULL;
 	}
 	else if (IsMouseButtonReleased(0))
 	{
@@ -746,7 +895,7 @@ void UpdatePlay(GameContext *game)
 			else if (p && 0 <= Vector2ArrFind(game->arrDraggedPieceMoves, targetPos))
 			{
 				// A piece was dragged
-				PiecesDoFullMove(game->normalChess, startRow, startCol,
+				NormalChessDoFullMove(game->normalChess, startRow, startCol,
 						targetRow, targetCol);
 				ClearMoveSquares(game);
 			}
@@ -770,7 +919,10 @@ void DrawPlay(const GameContext *game, ViewContext *vis)
 {
 	ClearBackground(BLUE);
 	DrawNormalChess(game, vis);
-	if (game->draggedPiece)
+	Vector2 newMousePos = GetMousePosition();
+	if (game->draggedPiece
+			&& (abs(newMousePos.x - game->clickStart.x) > 1
+				|| abs(newMousePos.y - game->clickStart.y) > 1))
 	{
 		Rectangle slice = NormalChessKindToTextureRect(game->draggedPiece->kind);
 		Vector2 pos = GetMousePosition();
