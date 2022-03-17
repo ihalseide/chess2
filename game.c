@@ -51,6 +51,7 @@ int ticks = 0;
 NormalChess *theNormalChess = NULL;
 Vector2 theBoardOffset = (Vector2){ 30, 30 };
 //int theZoomScale = 2;
+Vector2 theClickStart;
 
 // Convert screen coordinates to Tile coordinates
 void ScreenToTile(int pX, int pY, int x0, int y0, int tileSize, int *tX, int *tY)
@@ -233,7 +234,8 @@ void NormalChessDraw(NormalChess *game)
 	}
 }
 
-// Removes any pieces with the given row and column
+// Removes any pieces with the given row and column.
+// FREEs the piece pointer too!
 void PiecesRemovePieceAt(NormalChessPiece **arrPieces, int row, int col)
 {
 	for (int i = 0; i < arrlen(arrPieces); i++)
@@ -241,6 +243,8 @@ void PiecesRemovePieceAt(NormalChessPiece **arrPieces, int row, int col)
 		NormalChessPiece *p = arrPieces[i];
 		if (p->row == row && p->col == col)
 		{
+			NormalChessPieceFree(p);
+			arrPieces[i] = NULL;
 			arrdelswap(arrPieces, i);
 		}
 	}
@@ -289,16 +293,16 @@ void PiecesDoCapture(NormalChessPiece **arrPieces, int startRow, int startCol,
 }
 
 // Returns if a piece could possibly move to the given location.
-int NormalChessMovesContains(NormalChessPiece p, int row, int col)
+int NormalChessMovesContains(const NormalChessPiece *p, int row, int col)
 {
-	int dRow = row - p.row;
-	int dCol = col - p.col;
+	int dRow = row - p->row;
+	int dCol = col - p->col;
 	// Pieces cannot move to their own square
 	if (dRow == 0 && dCol == 0)
 	{
 		return 0;
 	}
-	switch (p.kind)
+	switch (p->kind)
 	{
 		case WHITE_KING:
 		case BLACK_KING:
@@ -368,44 +372,67 @@ void TestNormalChessMovesContains(void)
 	NormalChessPiece p1;
 
 	p1 = (NormalChessPiece){ .kind = WHITE_PAWN, .row = 0, .col = 4 };
-	assert(!NormalChessMovesContains(p1, 0, 4));
-	assert(!NormalChessMovesContains(p1, -1, 4));
-	assert(!NormalChessMovesContains(p1, 0, 3));
-	assert(!NormalChessMovesContains(p1, 0, 5));
-	assert(!NormalChessMovesContains(p1, 2, 4)); // no double move
-	assert(NormalChessMovesContains(p1, 1, 4));
-	assert(NormalChessMovesContains(p1, 1, 3));
-	assert(NormalChessMovesContains(p1, 1, 5));
+	assert(!NormalChessMovesContains(&p1, 0, 4));
+	assert(!NormalChessMovesContains(&p1, -1, 4));
+	assert(!NormalChessMovesContains(&p1, 0, 3));
+	assert(!NormalChessMovesContains(&p1, 0, 5));
+	assert(!NormalChessMovesContains(&p1, 2, 4)); // no double move
+	assert(NormalChessMovesContains(&p1, 1, 4));
+	assert(NormalChessMovesContains(&p1, 1, 3));
+	assert(NormalChessMovesContains(&p1, 1, 5));
 
 	p1 = (NormalChessPiece){ .kind = BLACK_PAWN, .row = 7, .col = 3 };
-	assert(!NormalChessMovesContains(p1, 7, 3));
-	assert(!NormalChessMovesContains(p1, 8, 3));
-	assert(!NormalChessMovesContains(p1, 7, 2));
-	assert(!NormalChessMovesContains(p1, 7, 4));
-	assert(!NormalChessMovesContains(p1, 5, 3)); // no double move
-	assert(NormalChessMovesContains(p1, 6, 2));
-	assert(NormalChessMovesContains(p1, 6, 3));
-	assert(NormalChessMovesContains(p1, 6, 4));
+	assert(!NormalChessMovesContains(&p1, 7, 3));
+	assert(!NormalChessMovesContains(&p1, 8, 3));
+	assert(!NormalChessMovesContains(&p1, 7, 2));
+	assert(!NormalChessMovesContains(&p1, 7, 4));
+	assert(!NormalChessMovesContains(&p1, 5, 3)); // no double move
+	assert(NormalChessMovesContains(&p1, 6, 2));
+	assert(NormalChessMovesContains(&p1, 6, 3));
+	assert(NormalChessMovesContains(&p1, 6, 4));
+}
+
+void ScreenToNormalChessPos(int pX, int pY, int x0, int y0, int tileSize,
+		int *row, int *col)
+{
+	int tx, ty;
+	ScreenToTile(pX, pY, x0, y0, tileSize, &tx, &ty); 
+	ty = 7 - ty;
+	assert(tx >= 0);
+	assert(tx <= 7);
+	assert(ty >= 0);
+	assert(ty <= 7);
+	*row = ty;
+	*col = tx;
 }
 
 void UpdatePlay(void)
 {
 	int x0 = theBoardOffset.x;
 	int y0 = theBoardOffset.y;
-	if (IsMouseButtonReleased(1))
+	if (IsMouseButtonPressed(0))
 	{
-		Vector2 mp = GetMousePosition();
+		theClickStart = GetMousePosition();
+	}
+	else if (IsMouseButtonReleased(0))
+	{
 		Rectangle boardRect = (Rectangle){ x0, y0, 8 * TILE_SIZE, 8 * TILE_SIZE };
-		if (CheckCollisionPointRec(mp, boardRect))
+		Vector2 clickEnd = GetMousePosition();
+		if (CheckCollisionPointRec(theClickStart, boardRect)
+				&& CheckCollisionPointRec(clickEnd, boardRect))
 		{
-			int tx, ty;
-			ScreenToTile(mp.x, mp.y, x0, y0, TILE_SIZE, &tx, &ty); 
-			ty = 7 - ty; // 0th row is the bottom
-			assert(tx >= 0);
-			assert(tx <= 7);
-			assert(ty >= 0);
-			assert(ty <= 7);
-			PiecesRemovePieceAt(theNormalChess->arrPieces, ty, tx);
+			int startRow, startCol, targetRow, targetCol;
+			ScreenToNormalChessPos(theClickStart.x, theClickStart.y, x0, y0,
+					TILE_SIZE, &startRow, &startCol); 
+			ScreenToNormalChessPos(clickEnd.x, clickEnd.y, x0, y0,
+					TILE_SIZE, &targetRow, &targetCol); 
+			NormalChessPiece *p = PiecesGetAt(theNormalChess->arrPieces,
+					startRow, startCol);
+			if (p && NormalChessMovesContains(p, targetRow, targetCol))
+			{
+				PiecesDoCapture(theNormalChess->arrPieces, startRow, startCol,
+						targetRow, targetCol);
+			}
 		}
 	}
 }
@@ -424,12 +451,8 @@ void Update(void) {
 
 void DrawPlay(void)
 {
-	// Tick count
-	char msg[20];
-	snprintf(msg, sizeof(msg), "Ticks: %d", ticks);
 	ClearBackground(RAYWHITE);
 	NormalChessDraw(theNormalChess);
-	DrawText(msg, 20, 20, 16, GREEN);
 }
 
 void Draw(void) {
@@ -440,9 +463,13 @@ void Draw(void) {
 			break;
 		default:
 			ClearBackground(RAYWHITE);
-			DrawText("Unknown game state", 5, 5, 16, RED);
+			DrawText("Unknown game state", 20, 50, 16, RED);
 			break;
 	}
+	// Tick count
+	//char msg[20];
+	//snprintf(msg, sizeof(msg), "Ticks: %d", ticks);
+	//DrawText(msg, 10, 10, 16, GREEN);
 }
 
 void Test(void)
