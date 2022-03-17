@@ -41,10 +41,36 @@ typedef struct NormalChess
 	NormalChessPiece **arrPieces; // dynamic array
 } NormalChess;
 
+#define TILE_SIZE 16
+
 Texture2D theSpritesheet;
 GameState theState = GS_PLAY;
 int ticks = 0;
 NormalChess *theNormalChess = NULL;
+Vector2 theBoardOffset = (Vector2){ 30, 30 };
+//int theZoomScale = 2;
+
+// Convert screen coordinates to Tile coordinates
+void ScreenToTile(int pX, int pY, int x0, int y0, int tileSize, int *tX, int *tY)
+{
+	*tX = (pX - x0) / tileSize;
+	*tY = (pY - y0) / tileSize;
+}
+
+// Convert Tile coordinates to Screen coordinates
+void TileToScreen(int tX, int tY, int x0, int y0, int tileSize, int *pX, int *pY)
+{
+	*pX = x0 + tX * tileSize;
+	*pY = y0 + tY * tileSize;
+}
+
+// Snap screen coordinates to Tile grid
+void ScreenSnapCoords(int pX, int pY, int x0, int y0, int tileSize, int *pX2, int *pY2)
+{
+	int tX, tY;
+	ScreenToTile(pX, pY, x0, y0, tileSize, &tX, &tY);
+	TileToScreen(tX, tY, x0, y0, tileSize, pX2, pY2);
+}
 
 NormalChessPiece *NormalChessPieceAlloc(NormalChessKind k, int row, int col)
 {
@@ -189,24 +215,66 @@ Rectangle NormalChessKindToTextureRect(NormalChessKind k)
 
 void NormalChessDraw(NormalChess *game)
 {
-	int x0 = 40;
-	int y0 = 40;
-	int sz = 16;
-	DrawChessBoard(x0, y0, sz, 8, 8);
+	int x0 = theBoardOffset.x;
+	int y0 = theBoardOffset.y;
+	DrawChessBoard(x0, y0, TILE_SIZE, 8, 8);
 	// Draw pieces
 	int len = arrlen(game->arrPieces);
 	for (int i = 0; i < len; i++)
 	{
 		NormalChessPiece p = *(game->arrPieces[i]);
 		Rectangle slice = NormalChessKindToTextureRect(p.kind);
-		int x = p.col * sz + x0;
-		int y = (7 - p.row) * sz + y0; // 0th row is at the bottom
+		int x = p.col * TILE_SIZE + x0;
+		int y = (7 - p.row) * TILE_SIZE + y0; // 0th row is at the bottom
 		Vector2 pos = (Vector2){ x, y };
 		DrawTextureRec(theSpritesheet, slice, pos, WHITE);
 	}
 }
 
+// Removes any pieces with the given row and column
+void PiecesRemovePieceAt(NormalChessPiece **arrPieces, int row, int col)
+{
+	for (int i = 0; i < arrlen(arrPieces); i++)
+	{
+		NormalChessPiece *p = arrPieces[i];
+		if (p->row == row && p->col == col)
+		{
+			arrdelswap(arrPieces, i);
+		}
+	}
+}
+
+void UpdatePlay(void)
+{
+	int x0 = theBoardOffset.x;
+	int y0 = theBoardOffset.y;
+	if (IsMouseButtonReleased(1))
+	{
+		Vector2 mp = GetMousePosition();
+		Rectangle boardRect = (Rectangle){ x0, y0, 8 * TILE_SIZE, 8 * TILE_SIZE };
+		if (CheckCollisionPointRec(mp, boardRect))
+		{
+			int tx, ty;
+			ScreenToTile(mp.x, mp.y, x0, y0, TILE_SIZE, &tx, &ty); 
+			ty = 7 - ty; // 0th row is the bottom
+			assert(tx >= 0);
+			assert(tx <= 7);
+			assert(ty >= 0);
+			assert(ty <= 7);
+			PiecesRemovePieceAt(theNormalChess->arrPieces, ty, tx);
+		}
+	}
+}
+
 void Update(void) {
+	switch (theState)
+	{
+		case GS_PLAY:
+			UpdatePlay();
+			break;
+		default:
+			break;
+	}
 	ticks++;
 }
 
@@ -218,7 +286,6 @@ void DrawPlay(void)
 	ClearBackground(RAYWHITE);
 	NormalChessDraw(theNormalChess);
 	DrawText(msg, 20, 20, 16, GREEN);
-
 }
 
 void Draw(void) {
