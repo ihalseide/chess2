@@ -46,12 +46,12 @@ typedef struct NormalChess
 {
 	int turn;
 	int doublePawnCol; // column of the most recent double pawn move
-	int whiteKingHasMoved;
-	int whiteKingsRookHasMoved;
-	int whiteQueensRookHasMoved;
-	int blackKingHasMoved;
-	int blackKingsRookHasMoved;
-	int blackQueensRookHasMoved;
+	int hasWhiteKingMoved;
+	int hasWhiteKingsRookMoved;
+	int hasWhiteQueensRookMoved;
+	int hasBlackKingMoved;
+	int hasBlackKingsRookMoved;
+	int hasBlackQueensRookMoved;
 	NormalChessPiece **arrPieces; // dynamic array
 } NormalChess;
 
@@ -159,12 +159,12 @@ NormalChess *NormalChessAlloc(int turn, NormalChessPiece **arrPieces)
 	new->turn = turn;
 	new->arrPieces = arrPieces;
 	new->doublePawnCol = -1;
-	new->whiteKingHasMoved = 0;
-	new->whiteKingsRookHasMoved = 0;
-	new->whiteQueensRookHasMoved= 0;
-	new->blackKingHasMoved = 0;
-	new->blackKingsRookHasMoved = 0;
-	new->blackQueensRookHasMoved = 0;
+	new->hasWhiteKingMoved = 0;
+	new->hasWhiteKingsRookMoved = 0;
+	new->hasWhiteQueensRookMoved= 0;
+	new->hasBlackKingMoved = 0;
+	new->hasBlackKingsRookMoved = 0;
+	new->hasBlackQueensRookMoved = 0;
 	return new;
 }
 
@@ -311,17 +311,17 @@ void DrawNormalChess(const GameContext *game, ViewContext *vis)
 	// Debug info:
 	//char msg[100];
 	//int x1 = 15, y1 = 5;
-	//snprintf(msg, sizeof(msg), "whiteKingHasMoved:%d", game->normalChess->whiteKingHasMoved);
+	//snprintf(msg, sizeof(msg), "hasWhiteKingMoved:%d", game->normalChess->hasWhiteKingMoved);
 	//DrawText(msg, x1, y1, 17, WHITE);
-	//snprintf(msg, sizeof(msg), "whiteKingsRookHasMoved:%d", game->normalChess->whiteKingsRookHasMoved);
+	//snprintf(msg, sizeof(msg), "hasWhiteKingsRookMoved:%d", game->normalChess->hasWhiteKingsRookMoved);
 	//DrawText(msg, x1, y1 + 17, 16, WHITE);
-	//snprintf(msg, sizeof(msg), "whiteQueensRookHasMoved:%d", game->normalChess->whiteQueensRookHasMoved);
+	//snprintf(msg, sizeof(msg), "hasWhiteQueensRookMoved:%d", game->normalChess->hasWhiteQueensRookMoved);
 	//DrawText(msg, x1, y1 + 17*2, 16, WHITE);
-	//snprintf(msg, sizeof(msg), "blackKingHasMoved:%d", game->normalChess->blackKingHasMoved);
+	//snprintf(msg, sizeof(msg), "hasBlackKingMoved:%d", game->normalChess->hasBlackKingMoved);
 	//DrawText(msg, x1, y1 + 17*3, 16, WHITE);
-	//snprintf(msg, sizeof(msg), "blackKingsRookHasMoved:%d", game->normalChess->blackKingsRookHasMoved);
+	//snprintf(msg, sizeof(msg), "hasBlackKingsRookMoved:%d", game->normalChess->hasBlackKingsRookMoved);
 	//DrawText(msg, x1, y1 + 17*4, 16, WHITE);
-	//snprintf(msg, sizeof(msg), "blackQueensRookHasMoved:%d", game->normalChess->blackQueensRookHasMoved);
+	//snprintf(msg, sizeof(msg), "hasBlackQueensRookMoved:%d", game->normalChess->hasBlackQueensRookMoved);
 	//DrawText(msg, x1, y1 + 17*5, 16, WHITE);
 }
 
@@ -406,7 +406,8 @@ void PiecesDoMove(NormalChessPiece **arrPieces, int startRow, int startCol,
 	assert(!PiecesGetAt(arrPieces, targetRow, targetCol));
 	// Find the piece in the array at the location and move it
 	NormalChessPiece *p = PiecesGetAt(arrPieces, startRow, startCol);
-	assert(p);
+	if (!p)
+		assert(p);
 	p->row = targetRow;
 	p->col = targetCol;
 }
@@ -480,22 +481,22 @@ int NormalChessMovesContains(const NormalChessPiece *p, int row, int col)
 			return (abs(dRow) == 2 && abs(dCol) == 1)
 				|| (abs(dRow) == 1 && abs(dCol) == 2);
 		case WHITE_PAWN:
-			// . # .
+			// # # #
 			// . * .
 			// . . .
-			return dRow == 1 && dCol == 0;
+			return dRow == 1 && abs(dCol) <= 1;
 		case BLACK_PAWN:
 			// . . .
 			// . * .
-			// . # .
-			return dRow == -1 && dCol == 0;
+			// # # #
+			return dRow == -1 && abs(dCol) <= 1;
 		default:
 			assert(0 && "invalid chess piece kind");
 	}
 }
 
 // Special moves in normal chess:
-//  - Pawns -> en passant
+//  - Pawns -> double first move and en passant
 //  - Kings -> castling
 int NormalChessSpecialMovesContains(const NormalChess *chess,
 		const NormalChessPiece *p, int row, int col)
@@ -506,18 +507,44 @@ int NormalChessSpecialMovesContains(const NormalChess *chess,
 	{
 		case WHITE_PAWN:
 			// Double first move OR En passant
-			return (p->row == 1 && dRow == 2 && dCol == 0)
-				|| (dCol != 0 && (chess->doublePawnCol == col) && (dRow == 1));
+			if (p->row == 1 && dRow == 2 && dCol == 0)
+			{
+				// Double first move
+				return 1;
+			}
+			else if (p->row == 4 && dRow == 1 && chess->doublePawnCol == col)
+			{
+				// En passant
+				NormalChessPiece *other = PiecesGetAt(chess->arrPieces, p->row, col);
+				return other && other->kind == BLACK_PAWN;
+			}
+			else
+			{
+				return 0;
+			}
 		case BLACK_PAWN:
 			// Double first move OR En passant
-			return (p->row == 6 && dRow == -2 && dCol == 0)
-				|| (dCol != 0 && (chess->doublePawnCol == col) && (dRow == -1));
+			if (p->row == 6 && dRow == -2 && dCol == 0)
+			{
+				// Double first move
+				return 1;
+			}
+			else if (p->row == 3 && dRow == -1 && chess->doublePawnCol == col)
+			{
+				// En passant
+				NormalChessPiece *other = PiecesGetAt(chess->arrPieces, p->row, col);
+				return other && other->kind == WHITE_PAWN;
+			}
+			else
+			{
+				return 0;
+			}
 		case WHITE_KING:
 			if (dCol > 0)
 			{
 				// King's side castle
-				return !chess->whiteKingHasMoved 
-					&& !chess->whiteKingsRookHasMoved
+				return !chess->hasWhiteKingMoved 
+					&& !chess->hasWhiteKingsRookMoved
 					&& dCol == 2
 					&& dRow == 0
 					&& !PiecesGetAt(chess->arrPieces, p->row, p->col + 1);
@@ -525,8 +552,8 @@ int NormalChessSpecialMovesContains(const NormalChess *chess,
 			else if (dCol < 0)
 			{
 				// Queen's side castle
-				return !chess->whiteKingHasMoved 
-					&& !chess->whiteQueensRookHasMoved
+				return !chess->hasWhiteKingMoved 
+					&& !chess->hasWhiteQueensRookMoved
 					&& dCol == -2
 					&& dRow == 0
 					&& !PiecesGetAt(chess->arrPieces, p->row, p->col - 1);
@@ -539,8 +566,8 @@ int NormalChessSpecialMovesContains(const NormalChess *chess,
 			if (dCol > 0)
 			{
 				// King's side castle
-				return !chess->blackKingHasMoved 
-					&& !chess->blackKingsRookHasMoved
+				return !chess->hasBlackKingMoved 
+					&& !chess->hasBlackKingsRookMoved
 					&& dCol == 2
 					&& dRow == 0
 					&& !PiecesGetAt(chess->arrPieces, p->row, p->col + 1);
@@ -548,8 +575,8 @@ int NormalChessSpecialMovesContains(const NormalChess *chess,
 			else if (dCol < 0)
 			{
 				// Queen's side castle
-				return !chess->blackKingHasMoved 
-					&& !chess->blackQueensRookHasMoved
+				return !chess->hasBlackKingMoved 
+					&& !chess->hasBlackQueensRookMoved
 					&& dCol == -2
 					&& dRow == 0
 					&& !PiecesGetAt(chess->arrPieces, p->row, p->col - 1);
@@ -604,25 +631,25 @@ void NormalChessCastleMove(NormalChess *chess, NormalChessPiece *p, int targetCo
 	switch (p->kind)
 	{
 		case WHITE_KING:
-			chess->whiteKingHasMoved = 1;
+			chess->hasWhiteKingMoved = 1;
 			if (targetCol > p->col)
 			{
-				chess->whiteKingsRookHasMoved = 1;
+				chess->hasWhiteKingsRookMoved = 1;
 			}
 			else
 			{
-				chess->whiteQueensRookHasMoved = 1;
+				chess->hasWhiteQueensRookMoved = 1;
 			}
 			break;
 		case BLACK_KING:
-			chess->blackKingHasMoved = 1;
+			chess->hasBlackKingMoved = 1;
 			if (targetCol > p->col)
 			{
-				chess->blackKingsRookHasMoved = 1;
+				chess->hasBlackKingsRookMoved = 1;
 			}
 			else
 			{
-				chess->blackQueensRookHasMoved = 1;
+				chess->hasBlackQueensRookMoved = 1;
 			}
 			break;
 		default:
@@ -655,11 +682,6 @@ void NormalChessPawnMove(NormalChess *chess, NormalChessPiece *p, int targetRow,
 			assert(other->kind == WHITE_PAWN || other->kind == BLACK_PAWN);
 			PiecesRemovePieceAt(chess->arrPieces, p->row, targetCol);
 		}
-		else
-		{
-			// Normal capture
-			PiecesDoCapture(chess->arrPieces, p->row, p->col, targetRow, targetCol);
-		}
 	}
 	else
 	{
@@ -675,29 +697,29 @@ void NormalChessUpdateFlagsFromMove(NormalChess *chess, NormalChessPiece *p, int
 	switch (p->kind)
 	{
 		case WHITE_KING:
-			chess->whiteKingHasMoved = 1;
+			chess->hasWhiteKingMoved = 1;
 			break;
 		case BLACK_KING:
-			chess->blackKingHasMoved = 1;
+			chess->hasBlackKingMoved = 1;
 			break;
 		case WHITE_ROOK:
 			if (startCol == 7)
 			{
-				chess->whiteKingsRookHasMoved = 1;
+				chess->hasWhiteKingsRookMoved = 1;
 			}
 			else if (startCol == 0)
 			{
-				chess->whiteQueensRookHasMoved = 1;
+				chess->hasWhiteQueensRookMoved = 1;
 			}
 			break;
 		case BLACK_ROOK:
 			if (startCol == 7)
 			{
-				chess->blackKingsRookHasMoved = 1;
+				chess->hasBlackKingsRookMoved = 1;
 			}
 			else if (startCol == 0)
 			{
-				chess->blackQueensRookHasMoved = 1;
+				chess->hasBlackQueensRookMoved = 1;
 			}
 			break;
 		default:
@@ -706,6 +728,7 @@ void NormalChessUpdateFlagsFromMove(NormalChess *chess, NormalChessPiece *p, int
 }
 
 // Handle normal moves and special moves like castling.
+// Also update the turn counter.
 void NormalChessDoFullMove(NormalChess *chess, int startRow, int startCol,
 		int targetRow, int targetCol)
 {
@@ -733,14 +756,22 @@ void NormalChessDoFullMove(NormalChess *chess, int startRow, int startCol,
 	PiecesDoCapture(chess->arrPieces, startRow, startCol, targetRow, targetCol);
 	// Update any flags that result from moving the king or rooks (for castling).
 	NormalChessUpdateFlagsFromMove(chess, p, startCol);
+	chess->turn++;
 }
 
+// Pawns and sliding pieces
 int PiecesMoveIsBlocked(NormalChessPiece **arrPieces, NormalChessPiece *p, int targetRow, int targetCol)
 {
 	assert(arrPieces);
 	assert(p);
 	switch (p->kind)
 	{
+		case WHITE_PAWN:
+		case BLACK_PAWN:
+			// Pawn is blocked for diagonal moves if there is no
+			// piece for it to capture at the square.
+			return targetCol != p->col
+					&& !PiecesGetAt(arrPieces, targetRow, targetCol);
 		case WHITE_QUEEN:
 		case BLACK_QUEEN:
 		case WHITE_BISHOP:
@@ -815,8 +846,8 @@ Vector2 *NormalChessCreatePieceMoveList(NormalChess *c, NormalChessPiece *p)
 		for (int col = 0; col < 8; col++)
 		{
 			// Must be a square within the piece's normal moves or special moves.
-			if (!NormalChessMovesContains(p, row, col)
-					&& !NormalChessSpecialMovesContains(c, p, row, col))
+			int special = NormalChessSpecialMovesContains(c, p, row, col);
+			if (!NormalChessMovesContains(p, row, col) && !special)
 			{
 				continue;
 			}
@@ -827,12 +858,19 @@ Vector2 *NormalChessCreatePieceMoveList(NormalChess *c, NormalChessPiece *p)
 				continue;
 			}
 			// A sliding piece's moves are blocked by the first piece hit.
-			if (PiecesMoveIsBlocked(c->arrPieces, p, row, col))
+			if (PiecesMoveIsBlocked(c->arrPieces, p, row, col) && !special)
 			{
 				continue;
 			}
 			// A piece may not move if it is pinned to the king
 			if (PiecesIsPiecePinned(c->arrPieces, p, row, col))
+			{
+				continue;
+			}
+			// Exception: pawns cannot capture forward.
+			if ((p->kind == WHITE_PAWN || p->kind == BLACK_PAWN)
+					&& col == p->col
+					&& PiecesGetAt(c->arrPieces, row, col))
 			{
 				continue;
 			}
@@ -847,6 +885,10 @@ void UpdateMoveSquares(GameContext *game, NormalChessPiece *p)
 {
 	assert(game);
 	assert(p);
+	if (game->arrDraggedPieceMoves)
+	{
+		ClearMoveSquares(game);
+	}
 	game->arrDraggedPieceMoves = NormalChessCreatePieceMoveList(game->normalChess, p);
 }
 
@@ -865,11 +907,19 @@ void UpdatePlay(GameContext *game)
 			int startRow, startCol;
 			ScreenToNormalChessPos(game->clickStart.x, game->clickStart.y, x0, y0, TILE_SIZE, &startRow, &startCol); 
 			NormalChessPiece *p = PiecesGetAt(game->normalChess->arrPieces, startRow, startCol);
-			game->draggedPiece = p;
-			ClearMoveSquares(game);
-			if (p)
+			NormalChessKind currentTurnKing = (game->normalChess->turn % 2 == 0)? WHITE_KING : BLACK_KING;
+			if (PieceKingOf(p) == currentTurnKing)
 			{
-				UpdateMoveSquares(game, p);
+				game->draggedPiece = p;
+				ClearMoveSquares(game);
+				if (p)
+				{
+					UpdateMoveSquares(game, p);
+				}
+			}
+			else
+			{
+				game->draggedPiece = NULL;
 			}
 		}
 	}
@@ -954,12 +1004,11 @@ void Test(void)
 
 int main(void) {
 	Test();
-
+	// Init:
     const int screenWidth = 600;
     const int screenHeight = 480;
     InitWindow(screenWidth, screenHeight, "Chess 2");
     SetTargetFPS(30);
-
 	GameContext game = (GameContext)
 	{
 		.state = GS_PLAY,
@@ -970,20 +1019,29 @@ int main(void) {
 		.arrDraggedPieceMoves = NULL,
 		.draggedPiece = NULL,
 	};
-
 	ViewContext vis = (ViewContext)
 	{
 		.spritesheet = LoadTexture("gfx/textures.png"),
 	};
-
+	// Main loop:
     while (!WindowShouldClose()) {
         Update(&game);
         BeginDrawing();
         Draw(&game, &vis);
         EndDrawing();
     }
-
+	// Clean up the game
+	game.draggedPiece = NULL;
+	if (game.normalChess)
+	{
+		NormalChessDestroy(game.normalChess);
+		game.normalChess = NULL;
+	}
+	if (game.arrDraggedPieceMoves)
+	{
+		arrfree(game.arrDraggedPieceMoves);
+		game.arrDraggedPieceMoves = NULL;
+	}
 	CloseWindow();
-
     return 0;
 }
