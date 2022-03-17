@@ -5,6 +5,10 @@
 #define STB_DS_IMPLEMENTATION
 #include "stb_ds.h"
 
+#define TILE_SIZE 16
+
+#define abs(x) ((x > 0)? x : -x)
+
 typedef enum GameState
 {
 	GS_OTHER,
@@ -40,8 +44,6 @@ typedef struct NormalChess
 	int turn;
 	NormalChessPiece **arrPieces; // dynamic array
 } NormalChess;
-
-#define TILE_SIZE 16
 
 Texture2D theSpritesheet;
 GameState theState = GS_PLAY;
@@ -244,6 +246,148 @@ void PiecesRemovePieceAt(NormalChessPiece **arrPieces, int row, int col)
 	}
 }
 
+// Get the first piece found in the array with the given location.
+// Returns NULL if no piece is found.
+NormalChessPiece *PiecesGetAt(NormalChessPiece **arrPieces, int row, int col)
+{
+	for (int i = 0; i < arrlen(arrPieces); i++)
+	{
+		NormalChessPiece *p = arrPieces[i];
+		if (p->row == row && p->col == col)
+		{
+			return p;
+		}
+	}
+	return NULL;
+}
+
+// Move the piece at start to target
+// (there should not be a piece already at target).
+void PiecesDoMove(NormalChessPiece **arrPieces, int startRow, int startCol,
+		int targetRow, int targetCol)
+{
+	assert(!PiecesGetAt(arrPieces, targetRow, targetCol));
+	// Find the piece in the array at the location and move it
+	for (int i = 0; i < arrlen(arrPieces); i++)
+	{
+		NormalChessPiece *p = arrPieces[i];
+		if (p->row == startRow && p->col == startCol)
+		{
+			p->row = targetRow;
+			p->col = targetCol;
+			break;
+		}
+	}
+}
+
+// Remove the piece at target and move the piece at start to the target.
+void PiecesDoCapture(NormalChessPiece **arrPieces, int startRow, int startCol,
+		int targetRow, int targetCol)
+{
+	PiecesRemovePieceAt(arrPieces, targetRow, targetCol);
+	PiecesDoMove(arrPieces, startRow, startCol, targetRow, targetCol);
+}
+
+// Returns if a piece could possibly move to the given location.
+int NormalChessMovesContains(NormalChessPiece p, int row, int col)
+{
+	int dRow = row - p.row;
+	int dCol = col - p.col;
+	// Pieces cannot move to their own square
+	if (dRow == 0 && dCol == 0)
+	{
+		return 0;
+	}
+	switch (p.kind)
+	{
+		case WHITE_KING:
+		case BLACK_KING:
+			// # # #
+			// # * #
+			// # # #
+			return (abs(dRow) <= 1) && (abs(dCol) <= 1);
+		case WHITE_QUEEN:
+		case BLACK_QUEEN:
+			// # . . # . . #
+			// . # . # . # .
+			// . . # # # . .
+			// # # # * # # #
+			// . . # # # . .
+			// . # . # . # .
+			// # . . # . . #
+			// Rook || Bishop
+			return (dRow == 0 || dCol == 0)
+				|| (abs(dRow) == abs(dCol));
+		case WHITE_ROOK:
+		case BLACK_ROOK:
+			// . . . # . . .
+			// . . . # . . .
+			// . . . # . . .
+			// # # # * # # #
+			// . . . # . . .
+			// . . . # . . .
+			// . . . # . . .
+			return dRow == 0 || dCol == 0;
+		case WHITE_BISHOP:
+		case BLACK_BISHOP:
+			// # . . . . . #
+			// . # . . . # .
+			// . . # . # . .
+			// . . . * . . .
+			// . . # . # . .
+			// . # . . . # .
+			// # . . . . . #
+			return abs(dRow) == abs(dCol);
+		case WHITE_KNIGHT:
+		case BLACK_KNIGHT:
+			// . . # . # . .
+			// . # . . . # .
+			// . . . * . . .
+			// . # . . . # .
+			// . . # . # . .
+			return (abs(dRow) == 2 && abs(dCol) == 1)
+				|| (abs(dRow) == 1 && abs(dCol) == 2);
+		case WHITE_PAWN:
+			// # # #
+			// . * .
+			// . . .
+			return dRow == 1 && abs(dCol) <= 1;
+		case BLACK_PAWN:
+			// . . .
+			// . * .
+			// # # #
+			return dRow == -1 && abs(dCol) <= 1;
+		default:
+			assert(0 && "invalid chess piece kind");
+	}
+}
+
+void TestNormalChessMovesContains(void)
+{
+	// int NormalChessMovesContains(NormalChessPiece p, int row, int col);
+	NormalChessPiece p1;
+
+	p1 = (NormalChessPiece){ .kind = WHITE_PAWN, .row = 0, .col = 4 };
+	assert(!NormalChessMovesContains(p1, 0, 4));
+	assert(!NormalChessMovesContains(p1, -1, 4));
+	assert(!NormalChessMovesContains(p1, 0, 3));
+	assert(!NormalChessMovesContains(p1, 0, 5));
+	assert(!NormalChessMovesContains(p1, 2, 4)); // no double move
+	assert(NormalChessMovesContains(p1, 1, 4));
+	assert(NormalChessMovesContains(p1, 1, 3));
+	assert(NormalChessMovesContains(p1, 1, 5));
+
+	p1 = (NormalChessPiece){ .kind = BLACK_PAWN, .row = 7, .col = 3 };
+	assert(!NormalChessMovesContains(p1, 7, 3));
+	assert(!NormalChessMovesContains(p1, 8, 3));
+	assert(!NormalChessMovesContains(p1, 7, 2));
+	assert(!NormalChessMovesContains(p1, 7, 4));
+	assert(!NormalChessMovesContains(p1, 5, 3)); // no double move
+	assert(NormalChessMovesContains(p1, 6, 2));
+	assert(NormalChessMovesContains(p1, 6, 3));
+	assert(NormalChessMovesContains(p1, 6, 4));
+}
+
 void UpdatePlay(void)
 {
 	int x0 = theBoardOffset.x;
@@ -301,7 +445,14 @@ void Draw(void) {
 	}
 }
 
+void Test(void)
+{
+	TestNormalChessMovesContains();
+}
+
 int main(void) {
+	Test();
+
     const int screenWidth = 600;
     const int screenHeight = 480;
     InitWindow(screenWidth, screenHeight, "Chezz");
