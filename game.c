@@ -7,7 +7,8 @@
 #include "stb_ds.h"
 
 #define TILE_SIZE 16
-#define HI_COLOR (Color){ 210, 210, 10, 128 }
+#define HI_COLOR (Color){ GOLD.r, GOLD.g, GOLD.b, 128 }
+#define SELECT_COLOR (Color){ GREEN.r, GREEN.g, GREEN.b, 128 }
 
 #define abs(x) (((x) > 0)? (x) : -(x))
 #define sign(x) ((x)? (((x) > 0)? 1 : -1) : 0)
@@ -16,6 +17,7 @@
 
 typedef enum GameState
 {
+	GS_NONE,
 	GS_PLAY,
 	GS_PLAY_PROMOTE,
 	GS_GAME_OVER,
@@ -59,20 +61,29 @@ typedef struct NormalChess
 	NormalChessPiece **arrPieces; // dynamic array
 } NormalChess;
 
+typedef struct Sprite
+{
+	const Texture *refTexture;
+	Vector2 position;
+} Sprite;
+
 typedef struct ViewContext
 {
 	Texture2D spritesheet;
 } ViewContext;
 
+// Note: the .state member should not be modified directly to switch states
+// because there may be things to do to clean up the current state. Use the
+// function GameSwitchState(...) to switch states.
 typedef struct GameContext
 {
 	int ticks;
-	GameState state;
+	GameState state; // see note above
 	NormalChess *normalChess;
 	int tileSize;
 	Vector2 boardOffset; // pixels
 	Vector2 clickStart; // pixels
-	NormalChessPiece *draggedPiece;
+	NormalChessPiece *selectedPiece;
 	Vector2 *arrDraggedPieceMoves; // board coordinates (col, row)
 } GameContext;
 
@@ -262,8 +273,8 @@ void NormalChessDestroy(NormalChess *p)
 
 void DrawChessBoard(int x0, int y0, int tileSize, int width, int height)
 {
-	Color c1 = RAYWHITE;
-	Color c2 = (Color){ 40, 20, 40, 255 };
+	Color light = BEIGE;
+	Color dark = BROWN;
 	for (int x = 0; x < width; x++)
 	{
 		for (int y = 0; y < height; y++)
@@ -271,11 +282,11 @@ void DrawChessBoard(int x0, int y0, int tileSize, int width, int height)
 			Color color;
 			if (x % 2 == y %2)
 			{
-				color = c1;
+				color = light;
 			}
 			else
 			{
-				color = c2;
+				color = dark;
 			}
 			DrawRectangle(x0 + x * tileSize,
 					y0 + y * tileSize,
@@ -310,7 +321,8 @@ Rectangle NormalChessKindToTextureRect(NormalChessKind k)
 	return lookup[k];
 }
 
-void DrawNormalChess(const GameContext *game, ViewContext *vis)
+// Note: hides piece(s) at (hideCol, hideRow)
+void DrawNormalChess(const GameContext *game, ViewContext *vis, int hideRow, int hideCol)
 {
 	int x0 = game->boardOffset.x;
 	int y0 = game->boardOffset.y;
@@ -320,10 +332,15 @@ void DrawNormalChess(const GameContext *game, ViewContext *vis)
 	// Draw pieces
 	for (int i = 0; i < arrlen(game->normalChess->arrPieces); i++)
 	{
-		NormalChessPiece p = *(game->normalChess->arrPieces[i]);
-		Rectangle slice = NormalChessKindToTextureRect(p.kind);
-		int x = 8 + p.col * tileSize + x0;
-		int y =  8 + (7 - p.row) * tileSize + y0; // 0th row is at the bottom
+		NormalChessPiece *p = game->normalChess->arrPieces[i];
+		assert(p);
+		if (p->row == hideRow && p->col == hideCol)
+		{
+			continue;
+		}
+		Rectangle slice = NormalChessKindToTextureRect(p->kind);
+		int x = 8 + p->col * tileSize + x0;
+		int y =  8 + (7 - p->row) * tileSize + y0; // 0th row is at the bottom
 		Vector2 pos = (Vector2){ x, y };
 		DrawTextureRec(vis->spritesheet, slice, pos, WHITE);
 	}
@@ -1012,6 +1029,99 @@ int NormalChessIsGameOver(NormalChess *chess)
 		|| !PiecesFindKing(chess->arrPieces, BLACK_KING);
 }
 
+// What to do when leaving/cleaning up the current game state.
+void GameCleanupState(GameContext *game)
+{
+	assert(game);
+	switch (game->state)
+	{
+		case GS_PLAY:
+		case GS_PLAY_PROMOTE:
+		case GS_GAME_OVER:
+			// Free normal chess game
+			assert(game->normalChess != NULL);
+			NormalChessDestroy(game->normalChess);
+			game->normalChess = NULL;
+			// Free dyanamic moves array
+			if (game->arrDraggedPieceMoves)
+			{
+				arrfree(game->arrDraggedPieceMoves);
+				game->arrDraggedPieceMoves = NULL;
+			}
+			// Current piece is now invalid
+			game->selectedPiece = NULL;
+			break;
+		case GS_MAIN_MENU:
+			break;
+		default:
+			assert(0 && "unhandled state");
+	}
+}
+
+// What to do when switching FROM current state TO next state.
+void GameLeaveState(GameContext *game, GameState next)
+{
+	assert(game);
+	switch (game->state)
+	{
+		case GS_PLAY:
+			if (!(next == GS_PLAY_PROMOTE || next == GS_GAME_OVER))
+			{
+				GameCleanupState(game);
+			}
+			break;
+		case GS_PLAY_PROMOTE:
+			if (next != GS_PLAY)
+			{
+				GameCleanupState(game);
+			}
+			break;
+		case GS_GAME_OVER:
+			GameCleanupState(game);
+			break;
+		case GS_MAIN_MENU:
+			GameCleanupState(game);
+			break;
+		default:
+			assert(0 && "unhandled state");
+	}
+}
+
+// What to do when switch FROM previous state TO current state.
+void GameEnterState(GameContext *game, GameState previous)
+{
+	assert(game);
+	switch (game->state)
+	{
+		case GS_PLAY:
+			if (previous == GS_PLAY_PROMOTE)
+			{
+				assert(game->normalChess);
+			}
+			else
+			{
+				game->normalChess = NormalChessInit();
+			}
+			break;
+		case GS_PLAY_PROMOTE:
+			break;
+		case GS_GAME_OVER:
+			break;
+		case GS_MAIN_MENU:
+			break;
+		default:
+			assert(0 && "unhandled state");
+	}
+}
+
+void GameSwitchState(GameContext *game, GameState newState)
+{
+	GameLeaveState(game, newState);
+	GameState previous = game->state;
+	game->state = newState;
+	GameEnterState(game, previous);
+}
+
 void UpdateMoveSquares(GameContext *game, NormalChessPiece *p)
 {
 	assert(game);
@@ -1048,7 +1158,7 @@ void UpdatePlay(GameContext *game)
 			NormalChessKind currentTurnKing = NormalChessCurrentKing(game->normalChess);
 			if (p && PieceKingOf(p) == currentTurnKing)
 			{
-				game->draggedPiece = p;
+				game->selectedPiece = p;
 				ClearMoveSquares(game);
 				if (p)
 				{
@@ -1057,14 +1167,13 @@ void UpdatePlay(GameContext *game)
 			}
 			else
 			{
-				game->draggedPiece = NULL;
+				game->selectedPiece = NULL;
 			}
 		}
 	}
 	else if (IsMouseButtonReleased(0))
 	{
 		Vector2 clickEnd = GetMousePosition();
-		game->draggedPiece = NULL;
 		if (CheckCollisionPointRec(game->clickStart, boardRect)
 				&& CheckCollisionPointRec(clickEnd, boardRect))
 		{
@@ -1086,7 +1195,14 @@ void UpdatePlay(GameContext *game)
 				NormalChessDoFullMove(game->normalChess, startRow, startCol,
 						targetRow, targetCol);
 				ClearMoveSquares(game);
+				game->selectedPiece = NULL;
 			}
+		}
+		else
+		{
+			// Clicked somewhere else, so clear all selections.
+			ClearMoveSquares(game);
+			game->selectedPiece = NULL;
 		}
 	}
 }
@@ -1096,7 +1212,7 @@ void UpdatePlayPromote(GameContext *game)
 	if (0)
 	{
 		// Done promoting, go back to play
-		game->state = GS_PLAY;
+		GameSwitchState(game, GS_PLAY);
 	}
 }
 
@@ -1105,19 +1221,22 @@ void UpdateGameOver(GameContext *game)
 	if (0)
 	{
 		// Player chose to play again.
-		game->state = GS_PLAY;
+		GameSwitchState(game, GS_PLAY);
 	}
 	else if (0)
 	{
 		// Player chose to return to menu.
-		game->state = GS_MAIN_MENU;
+		GameSwitchState(game, GS_MAIN_MENU);
 	}
 }
 
 void UpdateMainMenu(GameContext *game)
 {
 	// TODO: implement menu
-	game->state = GS_PLAY;
+	if (game->ticks >= 30)
+	{
+		GameSwitchState(game, GS_PLAY);
+	}
 }
 
 void Update(GameContext *game) {
@@ -1135,6 +1254,8 @@ void Update(GameContext *game) {
 		case GS_MAIN_MENU:
 			UpdateMainMenu(game);
 			break;
+		case GS_NONE:
+			assert(0 && "game->state should never have the value of GS_NONE");
 	}
 	game->ticks++;
 }
@@ -1144,8 +1265,23 @@ void DrawPlay(const GameContext *game, ViewContext *vis)
 	int x0 = game->boardOffset.x;
 	int y0 = game->boardOffset.y;
 	int tileSize = game->tileSize;
-	ClearBackground(BLUE);
-	DrawNormalChess(game, vis);
+	ClearBackground(DARKGREEN);
+	// Draw board and pieces
+	if (game->selectedPiece)
+	{
+		DrawNormalChess(game, vis, game->selectedPiece->row, game->selectedPiece->col);
+	}
+	else
+	{
+		DrawNormalChess(game, vis, -1, -1);
+	}
+	// Draw selected piece highlight
+	if (game->arrDraggedPieceMoves || game->selectedPiece)
+	{
+		int x, y;
+		ScreenSnapCoords(game->clickStart.x, game->clickStart.y, x0, y0, tileSize, &x, &y);
+		DrawRectangle(x, y, tileSize, tileSize, SELECT_COLOR);
+	}
 	// Draw highlighted squares
 	for (int i = 0; i < arrlen(game->arrDraggedPieceMoves); i++)
 	{
@@ -1156,14 +1292,27 @@ void DrawPlay(const GameContext *game, ViewContext *vis)
 	}
 	// Draw floating dragged piece
 	Vector2 newMousePos = GetMousePosition();
-	if (game->draggedPiece
+	if (IsMouseButtonDown(0)
+			&& game->selectedPiece
 			&& (abs(newMousePos.x - game->clickStart.x) > 1
 				|| abs(newMousePos.y - game->clickStart.y) > 1))
 	{
-		Rectangle slice = NormalChessKindToTextureRect(game->draggedPiece->kind);
+		Rectangle slice = NormalChessKindToTextureRect(game->selectedPiece->kind);
 		Vector2 pos = GetMousePosition();
 		pos.x += 10; // offset from mouse cursor
 		pos.y += 3;
+		DrawTextureRec(vis->spritesheet, slice, pos, WHITE);
+	}
+	else if (game->selectedPiece)
+	{
+		// Draw piece in original location because the mouse is not dragging it.
+		Rectangle slice = NormalChessKindToTextureRect(game->selectedPiece->kind);
+		int x, y;
+		TileToScreen(game->selectedPiece->col, 7 - game->selectedPiece->row,
+				x0, y0, 
+				tileSize, &x, &y);
+		Vector2 pos = (Vector2){ x + 8, y + 8 };
+		DrawText(TextFormat("posX: %d, posY: %d", pos.x, pos.y), 100, 30, 20, WHITE);
 		DrawTextureRec(vis->spritesheet, slice, pos, WHITE);
 	}
 	// Check Message
@@ -1171,6 +1320,8 @@ void DrawPlay(const GameContext *game, ViewContext *vis)
 	{
 		DrawText("Check", 100, 20, 24, RED);
 	}
+	// Debug info: selectedPiece
+	DrawText(TextFormat("selectedPiece: %p", game->selectedPiece), 190, 20, 20, WHITE);
 	// Debug info: draw list of game pieces
 	//if (game->normalChess)
 	//{
@@ -1186,6 +1337,19 @@ void DrawPlay(const GameContext *game, ViewContext *vis)
 	//}
 }
 
+void DrawGameOver(const GameContext *game, ViewContext *vis)
+{
+	DrawText("Game over", 20, 50, 16, RED);
+}
+
+void DrawMainMenu(const GameContext *game, ViewContext *vis)
+{
+	DrawText("Menu", 20, 50, 16, SKYBLUE);
+	Rectangle slice = (Rectangle){ 0, 0, 160, 64 };
+	Vector2 pos = (Vector2){ 250, 200 };
+	DrawTextureRec(vis->spritesheet, slice, pos, WHITE);
+}
+
 void Draw(const GameContext *game, ViewContext *vis) {
 	switch (game->state)
 	{
@@ -1193,7 +1357,10 @@ void Draw(const GameContext *game, ViewContext *vis) {
 			DrawPlay(game, vis);
 			break;
 		case GS_GAME_OVER:
-			DrawText("Game over", 20, 50, 16, RED);
+			DrawGameOver(game, vis);
+			break;
+		case GS_MAIN_MENU:
+			DrawMainMenu(game, vis);
 			break;
 		default:
 			ClearBackground(RAYWHITE);
@@ -1211,6 +1378,15 @@ void Test(void)
 	TestNormalChessMovesContains();
 }
 
+void GameCleanup(GameContext *game)
+{
+	GameCleanupState(game);
+	// Make sure every pointer has been dealt with
+	assert(game->selectedPiece == NULL);
+	assert(game->normalChess == NULL);
+	assert(game->arrDraggedPieceMoves == NULL);
+}
+
 int main(void) {
 	Test();
 	// Init:
@@ -1220,20 +1396,20 @@ int main(void) {
     SetTargetFPS(30);
 	GameContext game = (GameContext)
 	{
-		.state = GS_PLAY,
+		.state = GS_MAIN_MENU,
 		.ticks = 0,
 		.clickStart = (Vector2) { -1, -1 },
-		.normalChess = NormalChessInit(),
+		.normalChess = NULL,
 		.boardOffset = (Vector2) { 50, 100 },
 		.tileSize = TILE_SIZE * 2,
 		.arrDraggedPieceMoves = NULL,
-		.draggedPiece = NULL,
+		.selectedPiece = NULL,
 	};
 	ViewContext vis = (ViewContext)
 	{
 		.spritesheet = LoadTexture("gfx/textures.png"),
 	};
-	assert(!NormalChessIsGameOver(game.normalChess));
+	GameEnterState(&game, GS_NONE);
 	// Main loop:
     while (!WindowShouldClose()) {
         Update(&game);
@@ -1244,17 +1420,7 @@ int main(void) {
 	// Clean up files
 	UnloadTexture(vis.spritesheet);
 	// Clean up the game
-	game.draggedPiece = NULL;
-	if (game.normalChess)
-	{
-		NormalChessDestroy(game.normalChess);
-		game.normalChess = NULL;
-	}
-	if (game.arrDraggedPieceMoves)
-	{
-		arrfree(game.arrDraggedPieceMoves);
-		game.arrDraggedPieceMoves = NULL;
-	}
+	GameCleanup(&game);
 	CloseWindow();
     return 0;
 }
