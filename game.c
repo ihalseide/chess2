@@ -12,10 +12,13 @@
 #define abs(x) (((x) > 0)? (x) : -(x))
 #define sign(x) ((x)? (((x) > 0)? 1 : -1) : 0)
 
+// TODO: implement pawn promotion
+
 typedef enum GameState
 {
 	GS_OTHER,
 	GS_PLAY,
+	GS_GAME_OVER,
 } GameState;
 
 typedef enum NormalChessKind
@@ -58,6 +61,7 @@ typedef struct NormalChess
 typedef struct ViewContext
 {
 	Texture2D spritesheet;
+	Font font;
 } ViewContext;
 
 typedef struct GameContext
@@ -70,6 +74,27 @@ typedef struct GameContext
 	NormalChessPiece *draggedPiece;
 	Vector2 *arrDraggedPieceMoves; // board coordinates (col, row)
 } GameContext;
+
+const char *NormalChessKindToStr(NormalChessKind k)
+{
+	switch (k)
+	{
+		case WHITE_KING:   return "WHITE_KING";
+		case WHITE_QUEEN:  return "WHITE_QUEEN";
+		case WHITE_ROOK:   return "WHITE_ROOK";
+		case WHITE_BISHOP: return "WHITE_BISHOP";
+		case WHITE_KNIGHT: return "WHITE_KNIGHT";
+		case WHITE_PAWN:   return "WHITE_PAWN";
+		case BLACK_KING:   return "BLACK_KING";
+		case BLACK_QUEEN:  return "BLACK_QUEEN";
+		case BLACK_ROOK:   return "BLACK_ROOK";
+		case BLACK_BISHOP: return "BLACK_BISHOP";
+		case BLACK_KNIGHT: return "BLACK_KNIGHT";
+		case BLACK_PAWN:   return "BLACK_PAWN";
+		default:
+			return "(invalid)";
+	}
+}
 
 // Search dynamic array for vector2
 int Vector2ArrFind(Vector2 *arrVectors, Vector2 val)
@@ -96,7 +121,7 @@ void ClearMoveSquares(GameContext *game)
 
 int NormalChessPieceTeamEq(NormalChessPiece *a, NormalChessPiece *b)
 {
-	return (a->kind < BLACK_KING) == (b->kind < BLACK_KING);
+	return a && b && (a->kind < BLACK_KING) == (b->kind < BLACK_KING);
 }
 
 // Convert screen coordinates to Tile coordinates
@@ -376,17 +401,16 @@ NormalChessKind PieceKingOf(NormalChessPiece *p)
 	return NormalChessKingKind(p->kind);
 }
 
-// Find the king piece for a given team member.
-NormalChessPiece *PiecesFindKing(NormalChessPiece **arrPieces, NormalChessPiece *member)
+// Find the king piece for a kind.
+NormalChessPiece *PiecesFindKing(NormalChessPiece **arrPieces, NormalChessKind k)
 {
 	assert(arrPieces);
-	assert(member);
-	NormalChessKind k = PieceKingOf(member);
+	NormalChessKind king = NormalChessKingKind(k);
 	for (int i = 0; i < arrlen(arrPieces); i++)
 	{
 		NormalChessPiece *p = arrPieces[i];
 		assert(p);
-		if (p->kind == k)
+		if (p->kind == king)
 		{
 			return p;
 		}
@@ -851,13 +875,15 @@ void NormalChessDoFullMove(NormalChess *chess, int startRow, int startCol,
 	chess->turn++;
 }
 
+// See if a piece is prevented from moving to a target square because it is pinned.
 int PiecesIsPiecePinned(NormalChessPiece **arrPieces, NormalChessPiece *p, int targetRow, int targetCol)
 {
-	NormalChessPiece *king = PiecesFindKing(arrPieces, p);
+	assert(p);
+	NormalChessPiece *king = PiecesFindKing(arrPieces, p->kind);
 	if (!king)
 	{
-		// This is unusual, but not an error
-		return 0;
+		// No king means that the pieces cannot move.
+		return 1;
 	}
 	int originalRow = p->row;
 	int originalCol = p->col;
@@ -865,16 +891,49 @@ int PiecesIsPiecePinned(NormalChessPiece **arrPieces, NormalChessPiece *p, int t
 	p->row = targetRow;
 	p->col = targetCol;
 	// Check if any of the enemy pieces may capture the king.
-	NormalChessKind enemyKing = NormalChessEnemyKingKind(king->kind);
-	int isPinned = PiecesCanTeamCaptureSpot(arrPieces, enemyKing, king->row, king->col);
+	int isPinned = PiecesCanTeamCaptureSpot(arrPieces, NormalChessEnemyKingKind(PieceKingOf(p)), king->row, king->col);
 	// Restore the pieces original position.
 	p->row = originalRow;
 	p->col = originalCol;
 	return isPinned;
 }
 
-// All valid moves!
-// Create dynamic array of (col, row)
+int NormalChessAllMovesContains(NormalChess *c, NormalChessPiece *p, int row, int col)
+{
+	// Must be a square within the piece's normal moves or special moves.
+	int special = NormalChessSpecialMovesContains(c, p, row, col);
+	if (!NormalChessMovesContains(p, row, col) && !special)
+	{
+		return 0;
+	}
+	// A piece cannot capture any pieces on the same team.
+	NormalChessPiece *other = PiecesGetAt(c->arrPieces, row, col);
+	if (other && NormalChessPieceTeamEq(p, other))
+	{
+		return 0;
+	}
+	// A sliding piece's moves are blocked by the first piece hit.
+	if (!special && PiecesMoveIsBlocked(c->arrPieces, p, row, col))
+	{
+		return 0;
+	}
+	// A piece may not move if it is pinned to the king
+	if (PiecesIsPiecePinned(c->arrPieces, p, row, col))
+	{
+		return 0;
+	}
+	// Exception: pawns cannot capture forward.
+	if ((p->kind == WHITE_PAWN || p->kind == BLACK_PAWN)
+			&& col == p->col
+			&& PiecesGetAt(c->arrPieces, row, col))
+	{
+		return 0;
+	}
+	return 1;
+}
+
+// Get a list of all valid moves for a piece.
+// Returns: new dynamic array of (col, row).
 Vector2 *NormalChessCreatePieceMoveList(NormalChess *c, NormalChessPiece *p)
 {
 	Vector2 *result = NULL;
@@ -882,40 +941,73 @@ Vector2 *NormalChessCreatePieceMoveList(NormalChess *c, NormalChessPiece *p)
 	{
 		for (int col = 0; col < 8; col++)
 		{
-			// Must be a square within the piece's normal moves or special moves.
-			int special = NormalChessSpecialMovesContains(c, p, row, col);
-			if (!NormalChessMovesContains(p, row, col) && !special)
+			if (NormalChessAllMovesContains(c, p, row, col))
 			{
-				continue;
+				Vector2 colRow = (Vector2){ col, row };
+				arrpush(result, colRow);
 			}
-			// A piece cannot capture any pieces on the same team.
-			NormalChessPiece *other = PiecesGetAt(c->arrPieces, row, col);
-			if (other && NormalChessPieceTeamEq(p, other))
-			{
-				continue;
-			}
-			// A sliding piece's moves are blocked by the first piece hit.
-			if (PiecesMoveIsBlocked(c->arrPieces, p, row, col) && !special)
-			{
-				continue;
-			}
-			// A piece may not move if it is pinned to the king
-			if (PiecesIsPiecePinned(c->arrPieces, p, row, col))
-			{
-				continue;
-			}
-			// Exception: pawns cannot capture forward.
-			if ((p->kind == WHITE_PAWN || p->kind == BLACK_PAWN)
-					&& col == p->col
-					&& PiecesGetAt(c->arrPieces, row, col))
-			{
-				continue;
-			}
-			Vector2 colRow = (Vector2){ col, row };
-			arrpush(result, colRow);
 		}
 	}
 	return result;
+}
+
+NormalChessKind NormalChessCurrentKing(NormalChess *chess)
+{
+	return (chess->turn % 2 == 0)? WHITE_KING : BLACK_KING;
+}
+
+int NormalChessIsKingInCheck(NormalChess *chess)
+{
+	NormalChessKind currentKing = NormalChessCurrentKing(chess);
+	NormalChessPiece *king = PiecesFindKing(chess->arrPieces, currentKing);
+	if (!king)
+	{
+		return 0;
+	}
+	return PiecesCanTeamCaptureSpot(chess->arrPieces, NormalChessEnemyKingKind(currentKing), king->row, king->col);
+}
+
+int NormalChessCanMove(NormalChess *chess)
+{
+	assert(chess);
+	NormalChessKind king = NormalChessCurrentKing(chess);
+	// Check if any pieces on the curren team can move.
+	for (int i = 0; i < arrlen(chess->arrPieces); i++)
+	{
+		NormalChessPiece *p = chess->arrPieces[i];
+		assert(p);
+		if (PieceKingOf(p) == king)
+		{
+			Vector2 *moves = NormalChessCreatePieceMoveList(chess, p);
+			if (moves != NULL)
+			{
+				arrfree(moves);
+				return 1;
+			}
+			else
+			{
+				arrfree(moves);
+			}
+		}
+	}
+	return 0;
+}
+
+int NormalChessIsStalemate(NormalChess *chess)
+{
+	return !NormalChessIsKingInCheck(chess) && !NormalChessCanMove(chess);
+}
+
+int NormalChessIsCheckmate(NormalChess *chess)
+{
+	return NormalChessIsKingInCheck(chess) && !NormalChessCanMove(chess);
+}
+
+int NormalChessIsGameOver(NormalChess *chess)
+{
+	return !NormalChessCanMove(chess)
+		|| !PiecesFindKing(chess->arrPieces, WHITE_KING)
+		|| !PiecesFindKing(chess->arrPieces, BLACK_KING);
 }
 
 void UpdateMoveSquares(GameContext *game, NormalChessPiece *p)
@@ -935,6 +1027,12 @@ void UpdatePlay(GameContext *game)
 	int y0 = game->boardOffset.y;
 	Rectangle boardRect = (Rectangle){ x0, y0, 8 * TILE_SIZE, 8 * TILE_SIZE };
 
+	//if (NormalChessIsGameOver(game->normalChess))
+	//{
+	//	game->state = GS_GAME_OVER;
+	//	return;
+	//}
+
 	if (IsMouseButtonPressed(0))
 	{
 		game->clickStart = GetMousePosition();
@@ -944,7 +1042,7 @@ void UpdatePlay(GameContext *game)
 			int startRow, startCol;
 			ScreenToNormalChessPos(game->clickStart.x, game->clickStart.y, x0, y0, TILE_SIZE, &startRow, &startCol); 
 			NormalChessPiece *p = PiecesGetAt(game->normalChess->arrPieces, startRow, startCol);
-			NormalChessKind currentTurnKing = (game->normalChess->turn % 2 == 0)? WHITE_KING : BLACK_KING;
+			NormalChessKind currentTurnKing = NormalChessCurrentKing(game->normalChess);
 			if (p && PieceKingOf(p) == currentTurnKing)
 			{
 				game->draggedPiece = p;
@@ -996,6 +1094,8 @@ void Update(GameContext *game) {
 		case GS_PLAY:
 			UpdatePlay(game);
 			break;
+		case GS_GAME_OVER:
+			break;
 		default:
 			break;
 	}
@@ -1015,6 +1115,23 @@ void DrawPlay(const GameContext *game, ViewContext *vis)
 		Vector2 pos = GetMousePosition();
 		DrawTextureRec(vis->spritesheet, slice, pos, WHITE);
 	}
+	// Check Message
+	if (NormalChessIsKingInCheck(game->normalChess))
+	{
+		DrawText("Check", 100, 20, 16, RED);
+	}
+	// Debug info: draw list of game pieces
+	if (game->normalChess)
+	{
+		char msg[50];
+		for (int i = 0; i < arrlen(game->normalChess->arrPieces); i++)
+		{
+			NormalChessPiece *p = game->normalChess->arrPieces[i];
+			snprintf(msg, sizeof(msg), "#%2d: %s at row:%2d, col:%2d",
+					i, NormalChessKindToStr(p->kind), p->row, p->col);
+			DrawTextEx(vis->font, msg, (Vector2){ 250, 30 + i * 12 }, 8, 0, WHITE);
+		}
+	}
 }
 
 void Draw(const GameContext *game, ViewContext *vis) {
@@ -1022,6 +1139,9 @@ void Draw(const GameContext *game, ViewContext *vis) {
 	{
 		case GS_PLAY:
 			DrawPlay(game, vis);
+			break;
+		case GS_GAME_OVER:
+			DrawText("Game over", 20, 50, 16, RED);
 			break;
 		default:
 			ClearBackground(RAYWHITE);
@@ -1059,7 +1179,9 @@ int main(void) {
 	ViewContext vis = (ViewContext)
 	{
 		.spritesheet = LoadTexture("gfx/textures.png"),
+		.font = LoadFont("gfx/font.png"),
 	};
+	assert(!NormalChessIsGameOver(game.normalChess));
 	// Main loop:
     while (!WindowShouldClose()) {
         Update(&game);
@@ -1067,6 +1189,9 @@ int main(void) {
         Draw(&game, &vis);
         EndDrawing();
     }
+	// Clean up files
+	UnloadTexture(vis.spritesheet);
+	UnloadFont(vis.font);
 	// Clean up the game
 	game.draggedPiece = NULL;
 	if (game.normalChess)
