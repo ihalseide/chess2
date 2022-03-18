@@ -1128,10 +1128,13 @@ void Update(GameContext *game) {
 			break;
 		case GS_PLAY_PROMOTE:
 			UpdatePlayPromote(game);
+			break;
 		case GS_GAME_OVER:
 			UpdateGameOver(game);
+			break;
 		case GS_MAIN_MENU:
 			UpdateMainMenu(game);
+			break;
 	}
 	game->ticks++;
 }
