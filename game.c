@@ -61,7 +61,6 @@ typedef struct NormalChess
 typedef struct ViewContext
 {
 	Texture2D spritesheet;
-	Font font;
 } ViewContext;
 
 typedef struct GameContext
@@ -69,6 +68,7 @@ typedef struct GameContext
 	int ticks;
 	GameState state;
 	NormalChess *normalChess;
+	int tileSize;
 	Vector2 boardOffset; // pixels
 	Vector2 clickStart; // pixels
 	NormalChessPiece *draggedPiece;
@@ -309,27 +309,20 @@ Rectangle NormalChessKindToTextureRect(NormalChessKind k)
 	return lookup[k];
 }
 
-// Note: argument arrHiSquares = dynamic array of hilighted square positions.
 void DrawNormalChess(const GameContext *game, ViewContext *vis)
 {
 	int x0 = game->boardOffset.x;
 	int y0 = game->boardOffset.y;
-	DrawChessBoard(x0, y0, TILE_SIZE, 8, 8);
-	// Draw highlighted squares
-	for (int i = 0; i < arrlen(game->arrDraggedPieceMoves); i++)
-	{
-		Vector2 pos = game->arrDraggedPieceMoves[i];
-		int x, y;
-		TileToScreen(pos.x, 7 - pos.y, x0, y0, TILE_SIZE, &x, &y);
-		DrawRectangle(x, y, TILE_SIZE, TILE_SIZE, HI_COLOR);
-	}
+	int tileSize = game->tileSize;
+	// Draw board
+	DrawChessBoard(x0, y0, tileSize, 8, 8);
 	// Draw pieces
 	for (int i = 0; i < arrlen(game->normalChess->arrPieces); i++)
 	{
 		NormalChessPiece p = *(game->normalChess->arrPieces[i]);
 		Rectangle slice = NormalChessKindToTextureRect(p.kind);
-		int x = p.col * TILE_SIZE + x0;
-		int y = (7 - p.row) * TILE_SIZE + y0; // 0th row is at the bottom
+		int x = 8 + p.col * tileSize + x0;
+		int y =  8 + (7 - p.row) * tileSize + y0; // 0th row is at the bottom
 		Vector2 pos = (Vector2){ x, y };
 		DrawTextureRec(vis->spritesheet, slice, pos, WHITE);
 	}
@@ -812,6 +805,14 @@ void NormalChessUpdateFlagsFromMove(NormalChess *chess, NormalChessPiece *p, int
 	assert(p);
 	switch (p->kind)
 	{
+		case WHITE_PAWN:
+		case BLACK_PAWN:
+			// Reset the doublePawnCol flag if it wasn't set from this move.
+			if (startCol != chess->doublePawnCol)
+			{
+				chess->doublePawnCol = -1;
+			}
+			break;
 		case WHITE_KING:
 			chess->hasWhiteKingMoved = 1;
 			break;
@@ -1025,7 +1026,8 @@ void UpdatePlay(GameContext *game)
 {
 	int x0 = game->boardOffset.x;
 	int y0 = game->boardOffset.y;
-	Rectangle boardRect = (Rectangle){ x0, y0, 8 * TILE_SIZE, 8 * TILE_SIZE };
+	int tileSize = game->tileSize;
+	Rectangle boardRect = (Rectangle){ x0, y0, 8 * tileSize, 8 * tileSize };
 
 	//if (NormalChessIsGameOver(game->normalChess))
 	//{
@@ -1040,7 +1042,7 @@ void UpdatePlay(GameContext *game)
 		if (CheckCollisionPointRec(game->clickStart, boardRect))
 		{
 			int startRow, startCol;
-			ScreenToNormalChessPos(game->clickStart.x, game->clickStart.y, x0, y0, TILE_SIZE, &startRow, &startCol); 
+			ScreenToNormalChessPos(game->clickStart.x, game->clickStart.y, x0, y0, tileSize, &startRow, &startCol); 
 			NormalChessPiece *p = PiecesGetAt(game->normalChess->arrPieces, startRow, startCol);
 			NormalChessKind currentTurnKing = NormalChessCurrentKing(game->normalChess);
 			if (p && PieceKingOf(p) == currentTurnKing)
@@ -1067,9 +1069,9 @@ void UpdatePlay(GameContext *game)
 		{
 			int startRow, startCol, targetRow, targetCol;
 			ScreenToNormalChessPos(game->clickStart.x, game->clickStart.y, x0, y0,
-					TILE_SIZE, &startRow, &startCol); 
+					tileSize, &startRow, &startCol); 
 			ScreenToNormalChessPos(clickEnd.x, clickEnd.y, x0, y0,
-					TILE_SIZE, &targetRow, &targetCol); 
+					tileSize, &targetRow, &targetCol); 
 			NormalChessPiece *p = PiecesGetAt(game->normalChess->arrPieces,
 					startRow, startCol);
 			Vector2 targetPos = (Vector2){ targetCol, targetRow };
@@ -1104,8 +1106,20 @@ void Update(GameContext *game) {
 
 void DrawPlay(const GameContext *game, ViewContext *vis)
 {
+	int x0 = game->boardOffset.x;
+	int y0 = game->boardOffset.y;
+	int tileSize = game->tileSize;
 	ClearBackground(BLUE);
 	DrawNormalChess(game, vis);
+	// Draw highlighted squares
+	for (int i = 0; i < arrlen(game->arrDraggedPieceMoves); i++)
+	{
+		Vector2 pos = game->arrDraggedPieceMoves[i];
+		int x, y;
+		TileToScreen(pos.x, 7 - pos.y, x0, y0, tileSize, &x, &y);
+		DrawRectangle(x, y, tileSize, tileSize, HI_COLOR);
+	}
+	// Draw floating dragged piece
 	Vector2 newMousePos = GetMousePosition();
 	if (game->draggedPiece
 			&& (abs(newMousePos.x - game->clickStart.x) > 1
@@ -1113,25 +1127,28 @@ void DrawPlay(const GameContext *game, ViewContext *vis)
 	{
 		Rectangle slice = NormalChessKindToTextureRect(game->draggedPiece->kind);
 		Vector2 pos = GetMousePosition();
+		pos.x += 10; // offset from mouse cursor
+		pos.y += 3;
 		DrawTextureRec(vis->spritesheet, slice, pos, WHITE);
 	}
 	// Check Message
 	if (NormalChessIsKingInCheck(game->normalChess))
 	{
-		DrawText("Check", 100, 20, 16, RED);
+		DrawText("Check", 100, 20, 24, RED);
 	}
 	// Debug info: draw list of game pieces
-	if (game->normalChess)
-	{
-		char msg[50];
-		for (int i = 0; i < arrlen(game->normalChess->arrPieces); i++)
-		{
-			NormalChessPiece *p = game->normalChess->arrPieces[i];
-			snprintf(msg, sizeof(msg), "#%2d: %s at row:%2d, col:%2d",
-					i, NormalChessKindToStr(p->kind), p->row, p->col);
-			DrawTextEx(vis->font, msg, (Vector2){ 250, 30 + i * 12 }, 8, 0, WHITE);
-		}
-	}
+	//if (game->normalChess)
+	//{
+	//	char msg[50];
+	//	int scroll = -2 * (game->ticks % 100);
+	//	for (int i = 0; i < arrlen(game->normalChess->arrPieces); i++)
+	//	{
+	//		NormalChessPiece *p = game->normalChess->arrPieces[i];
+	//		snprintf(msg, sizeof(msg), "#%2d: %s at row:%2d, col:%2d",
+	//				i, NormalChessKindToStr(p->kind), p->row, p->col);
+	//		DrawText(msg, 180, 30 + scroll + i * 16, 20, WHITE);
+	//	}
+	//}
 }
 
 void Draw(const GameContext *game, ViewContext *vis) {
@@ -1173,13 +1190,13 @@ int main(void) {
 		.clickStart = (Vector2) { -1, -1 },
 		.normalChess = NormalChessInit(),
 		.boardOffset = (Vector2) { 50, 100 },
+		.tileSize = TILE_SIZE * 2,
 		.arrDraggedPieceMoves = NULL,
 		.draggedPiece = NULL,
 	};
 	ViewContext vis = (ViewContext)
 	{
 		.spritesheet = LoadTexture("gfx/textures.png"),
-		.font = LoadFont("gfx/font.png"),
 	};
 	assert(!NormalChessIsGameOver(game.normalChess));
 	// Main loop:
@@ -1191,7 +1208,6 @@ int main(void) {
     }
 	// Clean up files
 	UnloadTexture(vis.spritesheet);
-	UnloadFont(vis.font);
 	// Clean up the game
 	game.draggedPiece = NULL;
 	if (game.normalChess)
