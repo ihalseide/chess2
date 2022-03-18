@@ -16,9 +16,10 @@
 
 typedef enum GameState
 {
-	GS_OTHER,
 	GS_PLAY,
+	GS_PLAY_PROMOTE,
 	GS_GAME_OVER,
+	GS_MAIN_MENU,
 } GameState;
 
 typedef enum NormalChessKind
@@ -1090,16 +1091,47 @@ void UpdatePlay(GameContext *game)
 	}
 }
 
+void UpdatePlayPromote(GameContext *game)
+{
+	if (0)
+	{
+		// Done promoting, go back to play
+		game->state = GS_PLAY;
+	}
+}
+
+void UpdateGameOver(GameContext *game)
+{
+	if (0)
+	{
+		// Player chose to play again.
+		game->state = GS_PLAY;
+	}
+	else if (0)
+	{
+		// Player chose to return to menu.
+		game->state = GS_MAIN_MENU;
+	}
+}
+
+void UpdateMainMenu(GameContext *game)
+{
+	// TODO: implement menu
+	game->state = GS_PLAY;
+}
+
 void Update(GameContext *game) {
 	switch (game->state)
 	{
 		case GS_PLAY:
 			UpdatePlay(game);
 			break;
+		case GS_PLAY_PROMOTE:
+			UpdatePlayPromote(game);
 		case GS_GAME_OVER:
-			break;
-		default:
-			break;
+			UpdateGameOver(game);
+		case GS_MAIN_MENU:
+			UpdateMainMenu(game);
 	}
 	game->ticks++;
 }
