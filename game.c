@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
-
 #include "raylib.h"
 #define STB_DS_IMPLEMENTATION
 #include "stb_ds.h"
@@ -13,7 +12,13 @@
 #define abs(x) (((x) > 0)? (x) : -(x))
 #define sign(x) ((x)? (((x) > 0)? 1 : -1) : 0)
 
-// TODO: implement pawn promotion
+// TODO: change piece selection logic.
+// TODO: fix not allowing pinned piece to capture (see TODO below later in file).
+// TODO: implement pawn promotion.
+// TODO: add game turn timers.
+// TODO: add gameplay buttons to quit, resign, restart, etc..
+// TODO: add particles.
+// TODO: add music.
 
 typedef enum GameState
 {
@@ -72,18 +77,34 @@ typedef struct Sprite
 // function GameSwitchState(...) to switch states.
 typedef struct GameContext
 {
-	Texture2D texPieces; // spritesheet textures for pieces
-	Texture2D texBoard; // spritesheet textures for board and background
-	Texture2D texGUI; // spritesheet textures for user interface specific stuff
+	Texture2D texPieces;  // spritesheet textures for pieces
+	Texture2D texBoard;  // spritesheet textures for board and background
+	Texture2D texGUI;  // spritesheet textures for user interface specific stuff
 	int ticks;
-	GameState state; // see note above
+	GameState state;  // see note above
 	NormalChess *normalChess;
 	int tileSize;
-	Vector2 boardOffset; // pixels
-	Vector2 clickStart; // pixels
+	Vector2 boardOffset;  // pixels
+	Vector2 clickStart;  // pixels
 	NormalChessPiece *selectedPiece;
-	Vector2 *arrDraggedPieceMoves; // board coordinates (col, row)
+	Vector2 *arrDraggedPieceMoves;  // board coordinates (col, row)
+	int isDebug;  // higher number generally means more info
 } GameContext;
+
+
+const char *GameStateToStr(GameState s)
+{
+	switch (s)
+	{
+		case GS_NONE:         return "GS_NONE";
+		case GS_PLAY:         return "GS_PLAY";
+		case GS_PLAY_PROMOTE: return "GS_PLAY_PROMOTE";
+		case GS_GAME_OVER:    return "GS_GAME_OVER";
+		case GS_MAIN_MENU:    return "GS_MAIN_MENU";
+		default:
+			return "(invalid GameState)";
+	}
+}
 
 const char *NormalChessKindToStr(NormalChessKind k)
 {
@@ -102,7 +123,7 @@ const char *NormalChessKindToStr(NormalChessKind k)
 		case BLACK_KNIGHT: return "BLACK_KNIGHT";
 		case BLACK_PAWN:   return "BLACK_PAWN";
 		default:
-			return "(invalid)";
+			return "(invalid NormalChessKind)";
 	}
 }
 
@@ -893,6 +914,9 @@ void NormalChessDoFullMove(NormalChess *chess, int startRow, int startCol,
 }
 
 // See if a piece is prevented from moving to a target square because it is pinned.
+// TODO: check the case if the move is a capture, because this function is
+// currently causing a bug where capturing is not allowed even if the capture
+// un-pins the piece.
 int PiecesIsPiecePinned(NormalChessPiece **arrPieces, NormalChessPiece *p, int targetRow, int targetCol)
 {
 	assert(p);
@@ -918,8 +942,9 @@ int PiecesIsPiecePinned(NormalChessPiece **arrPieces, NormalChessPiece *p, int t
 int NormalChessAllMovesContains(NormalChess *c, NormalChessPiece *p, int row, int col)
 {
 	// Must be a square within the piece's normal moves or special moves.
+	int normal = NormalChessMovesContains(p, row, col);
 	int special = NormalChessSpecialMovesContains(c, p, row, col);
-	if (!NormalChessMovesContains(p, row, col) && !special)
+	if (!normal && !special)
 	{
 		return 0;
 	}
@@ -930,6 +955,7 @@ int NormalChessAllMovesContains(NormalChess *c, NormalChessPiece *p, int row, in
 		return 0;
 	}
 	// A sliding piece's moves are blocked by the first piece hit.
+	// TODO: comment why is the !special is here again?
 	if (!special && PiecesMoveIsBlocked(c->arrPieces, p, row, col))
 	{
 		return 0;
@@ -950,7 +976,10 @@ int NormalChessAllMovesContains(NormalChess *c, NormalChessPiece *p, int row, in
 }
 
 // Get a list of all valid moves for a piece.
-// Returns: new dynamic array of (col, row).
+// Returns: a NEW dynamic array of (col, row) which must be FREEd later.
+// NOTE: if creating these dynamic lists of move squares is too slow, etc, then
+// we can just keep a one-time-allocated array of booleans for whether each
+// square on the board can be moved to.
 Vector2 *NormalChessCreatePieceMoveList(NormalChess *c, NormalChessPiece *p)
 {
 	Vector2 *result = NULL;
@@ -981,7 +1010,8 @@ int NormalChessIsKingInCheck(NormalChess *chess)
 	{
 		return 0;
 	}
-	return PiecesCanTeamCaptureSpot(chess->arrPieces, NormalChessEnemyKingKind(currentKing), king->row, king->col);
+	return PiecesCanTeamCaptureSpot(chess->arrPieces,
+			NormalChessEnemyKingKind(currentKing), king->row, king->col);
 }
 
 int NormalChessCanMove(NormalChess *chess)
@@ -1318,21 +1348,26 @@ void DrawPlay(const GameContext *game)
 	{
 		DrawText("Check", 100, 20, 24, RED);
 	}
-	// Debug info: selectedPiece
-	DrawText(TextFormat("selectedPiece: %p", game->selectedPiece), 190, 20, 20, WHITE);
-	// Debug info: draw list of game pieces
-	//if (game->normalChess)
-	//{
-	//	char msg[50];
-	//	int scroll = -2 * (game->ticks % 100);
-	//	for (int i = 0; i < arrlen(game->normalChess->arrPieces); i++)
-	//	{
-	//		NormalChessPiece *p = game->normalChess->arrPieces[i];
-	//		snprintf(msg, sizeof(msg), "#%2d: %s at row:%2d, col:%2d",
-	//				i, NormalChessKindToStr(p->kind), p->row, p->col);
-	//		DrawText(msg, 180, 30 + scroll + i * 16, 20, WHITE);
-	//	}
-	//}
+	// Debug info
+	//   2+ -> draw list of game pieces
+	if (game->isDebug)
+	{
+		// selectedPiece
+		DrawText(TextFormat("selectedPiece: %p", game->selectedPiece), 190, 20, 20, WHITE);
+		// draw list of game pieces
+		if (game->isDebug >= 2 && game->normalChess)
+		{
+			char msg[50];
+			int scroll = -2 * (game->ticks % 100);
+			for (int i = 0; i < arrlen(game->normalChess->arrPieces); i++)
+			{
+				NormalChessPiece *p = game->normalChess->arrPieces[i];
+				snprintf(msg, sizeof(msg), "#%2d: %s at row:%2d, col:%2d",
+						i, NormalChessKindToStr(p->kind), p->row, p->col);
+				DrawText(msg, 180, 30 + scroll + i * 16, 20, WHITE);
+			}
+		}
+	}
 }
 
 void DrawGameOver(const GameContext *game)
@@ -1361,19 +1396,19 @@ void Draw(const GameContext *game) {
 			DrawMainMenu(game);
 			break;
 		default:
-			ClearBackground(RAYWHITE);
-			DrawText("Unknown game state", 20, 50, 16, RED);
+			// Unknown game state
 			break;
 	}
-	// Tick count
-	//char msg[20];
-	//snprintf(msg, sizeof(msg), "Ticks: %d", ticks);
-	//DrawText(msg, 10, 10, 16, GREEN);
-}
-
-void Test(void)
-{
-	TestNormalChessMovesContains();
+	// Debug info:
+	if (game->isDebug)
+	{
+		// Current state
+		DrawText(TextFormat("game state: %s", GameStateToStr(game->state)),
+				10, 10, 16, GREEN);
+		// Tick count
+		DrawText(TextFormat("game ticks: %d", game->ticks),
+				10, 26, 16, GREEN);
+	}
 }
 
 void GameCleanup(GameContext *game)
@@ -1385,6 +1420,11 @@ void GameCleanup(GameContext *game)
 	assert(game->arrDraggedPieceMoves == NULL);
 }
 
+void Test(void)
+{
+	TestNormalChessMovesContains();
+}
+
 int main(void) {
 	Test();
 	// Init:
@@ -1394,17 +1434,18 @@ int main(void) {
     SetTargetFPS(30);
 	GameContext game = (GameContext)
 	{
-		.state = GS_MAIN_MENU,
-		.ticks = 0,
-		.clickStart = (Vector2) { -1, -1 },
-		.normalChess = NULL,
-		.boardOffset = (Vector2) { 50, 100 },
-		.tileSize = TILE_SIZE * 2,
+		.isDebug              = 1, // integer for visual debug flag, higher number means more debug info
+		.state                = GS_MAIN_MENU,
+		.ticks                = 0,
+		.clickStart           = (Vector2) { -1, -1 },
+		.normalChess          = NULL,
+		.boardOffset          = (Vector2) { 50, 100 },
+		.tileSize             = TILE_SIZE * 2,
 		.arrDraggedPieceMoves = NULL,
-		.selectedPiece = NULL,
-		.texPieces = LoadTexture("gfx/pieces.png"),
-		.texBoard = LoadTexture("gfx/board.png"),
-		.texGUI = LoadTexture("gfx/gui.png"),
+		.selectedPiece        = NULL,
+		.texPieces            = LoadTexture("gfx/pieces.png"),
+		.texBoard             = LoadTexture("gfx/board.png"),
+		.texGUI               = LoadTexture("gfx/gui.png"),
 	};
 	GameEnterState(&game, GS_NONE);
 	// Main loop:
