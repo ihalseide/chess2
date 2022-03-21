@@ -67,16 +67,14 @@ typedef struct Sprite
 	Vector2 position;
 } Sprite;
 
-typedef struct ViewContext
-{
-	Texture2D spritesheet;
-} ViewContext;
-
 // Note: the .state member should not be modified directly to switch states
 // because there may be things to do to clean up the current state. Use the
 // function GameSwitchState(...) to switch states.
 typedef struct GameContext
 {
+	Texture2D texPieces; // spritesheet textures for pieces
+	Texture2D texBoard; // spritesheet textures for board and background
+	Texture2D texGUI; // spritesheet textures for user interface specific stuff
 	int ticks;
 	GameState state; // see note above
 	NormalChess *normalChess;
@@ -322,7 +320,7 @@ Rectangle NormalChessKindToTextureRect(NormalChessKind k)
 }
 
 // Note: hides piece(s) at (hideCol, hideRow)
-void DrawNormalChess(const GameContext *game, ViewContext *vis, int hideRow, int hideCol)
+void DrawNormalChess(const GameContext *game, int hideRow, int hideCol)
 {
 	int x0 = game->boardOffset.x;
 	int y0 = game->boardOffset.y;
@@ -342,7 +340,7 @@ void DrawNormalChess(const GameContext *game, ViewContext *vis, int hideRow, int
 		int x = 8 + p->col * tileSize + x0;
 		int y =  8 + (7 - p->row) * tileSize + y0; // 0th row is at the bottom
 		Vector2 pos = (Vector2){ x, y };
-		DrawTextureRec(vis->spritesheet, slice, pos, WHITE);
+		DrawTextureRec(game->texPieces, slice, pos, WHITE);
 	}
 	// Debug info:
 	//char msg[100];
@@ -1260,7 +1258,7 @@ void Update(GameContext *game) {
 	game->ticks++;
 }
 
-void DrawPlay(const GameContext *game, ViewContext *vis)
+void DrawPlay(const GameContext *game)
 {
 	int x0 = game->boardOffset.x;
 	int y0 = game->boardOffset.y;
@@ -1269,11 +1267,11 @@ void DrawPlay(const GameContext *game, ViewContext *vis)
 	// Draw board and pieces
 	if (game->selectedPiece)
 	{
-		DrawNormalChess(game, vis, game->selectedPiece->row, game->selectedPiece->col);
+		DrawNormalChess(game, game->selectedPiece->row, game->selectedPiece->col);
 	}
 	else
 	{
-		DrawNormalChess(game, vis, -1, -1);
+		DrawNormalChess(game, -1, -1);
 	}
 	// Draw selected piece highlight
 	if (game->arrDraggedPieceMoves || game->selectedPiece)
@@ -1301,7 +1299,7 @@ void DrawPlay(const GameContext *game, ViewContext *vis)
 		Vector2 pos = GetMousePosition();
 		pos.x += 10; // offset from mouse cursor
 		pos.y += 3;
-		DrawTextureRec(vis->spritesheet, slice, pos, WHITE);
+		DrawTextureRec(game->texPieces, slice, pos, WHITE);
 	}
 	else if (game->selectedPiece)
 	{
@@ -1313,7 +1311,7 @@ void DrawPlay(const GameContext *game, ViewContext *vis)
 				tileSize, &x, &y);
 		Vector2 pos = (Vector2){ x + 8, y + 8 };
 		DrawText(TextFormat("posX: %d, posY: %d", pos.x, pos.y), 100, 30, 20, WHITE);
-		DrawTextureRec(vis->spritesheet, slice, pos, WHITE);
+		DrawTextureRec(game->texPieces, slice, pos, WHITE);
 	}
 	// Check Message
 	if (NormalChessIsKingInCheck(game->normalChess))
@@ -1337,30 +1335,30 @@ void DrawPlay(const GameContext *game, ViewContext *vis)
 	//}
 }
 
-void DrawGameOver(const GameContext *game, ViewContext *vis)
+void DrawGameOver(const GameContext *game)
 {
 	DrawText("Game over", 20, 50, 16, RED);
 }
 
-void DrawMainMenu(const GameContext *game, ViewContext *vis)
+void DrawMainMenu(const GameContext *game)
 {
 	DrawText("Menu", 20, 50, 16, SKYBLUE);
 	Rectangle slice = (Rectangle){ 0, 0, 160, 64 };
 	Vector2 pos = (Vector2){ 250, 200 };
-	DrawTextureRec(vis->spritesheet, slice, pos, WHITE);
+	DrawTextureRec(game->texPieces, slice, pos, WHITE);
 }
 
-void Draw(const GameContext *game, ViewContext *vis) {
+void Draw(const GameContext *game) {
 	switch (game->state)
 	{
 		case GS_PLAY:
-			DrawPlay(game, vis);
+			DrawPlay(game);
 			break;
 		case GS_GAME_OVER:
-			DrawGameOver(game, vis);
+			DrawGameOver(game);
 			break;
 		case GS_MAIN_MENU:
-			DrawMainMenu(game, vis);
+			DrawMainMenu(game);
 			break;
 		default:
 			ClearBackground(RAYWHITE);
@@ -1404,21 +1402,18 @@ int main(void) {
 		.tileSize = TILE_SIZE * 2,
 		.arrDraggedPieceMoves = NULL,
 		.selectedPiece = NULL,
-	};
-	ViewContext vis = (ViewContext)
-	{
-		.spritesheet = LoadTexture("gfx/textures.png"),
+		.texPieces = LoadTexture("gfx/pieces.png"),
+		.texBoard = LoadTexture("gfx/board.png"),
+		.texGUI = LoadTexture("gfx/gui.png"),
 	};
 	GameEnterState(&game, GS_NONE);
 	// Main loop:
     while (!WindowShouldClose()) {
         Update(&game);
         BeginDrawing();
-        Draw(&game, &vis);
+        Draw(&game);
         EndDrawing();
     }
-	// Clean up files
-	UnloadTexture(vis.spritesheet);
 	// Clean up the game
 	GameCleanup(&game);
 	CloseWindow();
