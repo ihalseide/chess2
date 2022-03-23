@@ -220,6 +220,19 @@ Sprite *SpritesArrFindSpriteAt(Sprite *arrSprites, int x, int y)
 	return NULL;
 }
 
+Sprite *SpritesArrFindSpriteForPiece(Sprite *arrSprites, NormalChessPiece *p)
+{
+	for (int i = 0; i < arrlen(arrSprites); i++)
+	{
+		Sprite *s = &arrSprites[i];
+		if (s->data.kind == SK_NORMAL_CHESS_PIECE && s->data.as_normalChessPiece == p)
+		{
+			return s;
+		}
+	}
+	return NULL;
+}
+
 // Move a sprite so that it is centered at the given position.
 void SpriteMoveCenter(Sprite *s, int centerX, int centerY)
 {
@@ -1124,6 +1137,18 @@ int NormalChessIsGameOver(NormalChess *chess)
 		|| !PiecesFindKing((const NormalChessPiece **)chess->arrPieces, BLACK_KING);
 }
 
+void SpriteMoveToNormalChessPiece(Sprite *s, const GameContext *game)
+{
+	assert(s);
+	assert(s->data.kind == SK_NORMAL_CHESS_PIECE);
+	assert(game);
+	NormalChessPiece *p = s->data.as_normalChessPiece;
+	int tileSize = game->tileSize;
+	int x, y;
+	NormalChessPosToScreen(p->row, p->col, game->boardOffset.x, game->boardOffset.y, tileSize, &x, &y);
+	SpriteMoveCenter(s, x + tileSize/2, y + tileSize/2);
+}
+
 // Initially create the sprites for the pieces in a normal chess game.
 Sprite *SpritesArrCreateNormalChess(GameContext *game)
 {
@@ -1138,12 +1163,10 @@ Sprite *SpritesArrCreateNormalChess(GameContext *game)
 		assert(piece);
 		Sprite new;
 		new.data = (SpriteData){ .kind = SK_NORMAL_CHESS_PIECE, .as_normalChessPiece = piece };
-		int x, y;
-		NormalChessPosToScreen(piece->row, piece->col, x0, y0, tileSize, &x, &y);
 		new.boundingBox = (Rectangle){ 0, 0, 16, 16};
 		new.refTexture = &(game->texPieces);
 		new.textureRect = NormalChessKindToTextureRect(piece->kind);
-		SpriteMoveCenter(&new, x + tileSize/2, y + tileSize/2);
+		SpriteMoveToNormalChessPiece(&new, game);
 		arrpush(arrSprites, new);
 	}
 	return arrSprites;
@@ -1327,10 +1350,23 @@ void UpdatePlay(GameContext *game)
 	else if (IsMouseButtonReleased(0))
 	{
 		// TODO: handle mouse release.
+		NormalChessPiece *p = GameGetValidSelectedPiece(game);
+		if (p)
+		{
+			Sprite *s = SpritesArrFindSpriteForPiece(game->arrSprites, p);
+			SpriteMoveToNormalChessPiece(s, game);
+		}
 	}
-	else if (IsMouseButtonDown(0))
+	else if (IsMouseButtonDown(0) 
+			&& (abs(mousePos.x - game->clickStart.x) > 3 || abs(mousePos.y - game->clickStart.y) > 3))
 	{
 		// TODO: handle mouse down, move dragged sprite.
+		NormalChessPiece *p = GameGetValidSelectedPiece(game);
+		if (p)
+		{
+			Sprite *s = SpritesArrFindSpriteForPiece(game->arrSprites, p);
+			SpriteMoveCenter(s, mousePos.x, mousePos.y);
+		}
 	}
 }
 
