@@ -13,7 +13,6 @@
 #define abs(x) (((x) > 0)? (x) : -(x))
 #define sign(x) ((x)? (((x) > 0)? 1 : -1) : 0)
 
-// TODO: fix not allowing pinned piece to capture (see TODO below later in file).
 // TODO: implement pawn promotion.
 // TODO: add game turn timers.
 // TODO: add gameplay buttons to quit, resign, restart, etc..
@@ -592,6 +591,20 @@ const NormalChessPiece *PiecesGetAtConst(const NormalChessPiece **arrPieces, int
 	return NULL;
 }
 
+int PiecesCountAtConst(const NormalChessPiece **arrPieces, int row, int col)
+{
+	int count = 0;
+	for (int i = 0; i < arrlen(arrPieces); i++)
+	{
+		const NormalChessPiece *p = arrPieces[i];
+		if (p->row == row && p->col == col)
+		{
+			count++;
+		}
+	}
+	return count;
+}
+
 NormalChessPiece *NormalChessMoveGetSubject(NormalChessMove move, NormalChessPiece **arrPieces)
 {
 	if (move.subjectRow < 0 || move.subjectRow > 7 || move.subjectCol < 0 || move.subjectCol > 7)
@@ -714,6 +727,14 @@ int PiecesMoveIsBlocked(const NormalChessPiece **arrPieces, const NormalChessPie
 {
 	assert(arrPieces);
 	assert(p);
+	// If there is another piece on the same square as the given piece, then
+	// the piece is considered blocked. This is only the case for checking if
+	// a piece is pinned and we want to simulate a capture without affecting
+	// the other pieces.
+	if (PiecesCountAtConst(arrPieces, p->row, p->col) > 1)
+	{
+		return 1;
+	}
 	switch (p->kind)
 	{
 		case WHITE_PAWN:
@@ -1167,7 +1188,6 @@ void NormalChessDoMove(NormalChess *chess, NormalChessMove move)
 }
 
 // See if a piece is prevented from moving to a target square because it is pinned.
-// TODO: check the case if the move is a capture, because this function is
 // currently causing a bug where capturing is not allowed even if the capture
 // un-pins the piece.
 int PiecesIsPiecePinned(const NormalChessPiece **arrPieces, NormalChessPiece *p, int targetRow,
@@ -1186,6 +1206,8 @@ int PiecesIsPiecePinned(const NormalChessPiece **arrPieces, NormalChessPiece *p,
 	p->row = targetRow;
 	p->col = targetCol;
 	// Check if any of the enemy pieces may capture the king.
+	// If this current piece moves to a square where one of the enemy pieces is, the enemy
+	// piece is considered to be blocked (the move is acting like a capture). 
 	int isPinned = PiecesCanTeamCaptureSpot(arrPieces, NormalChessEnemyKingKind(PieceKingOf(p)),
 			king->row, king->col);
 	// Restore the pieces original position.
