@@ -25,6 +25,7 @@ typedef enum GameState
 {
 	GS_NONE,
 	GS_PLAY,
+	GS_PLAY_ANIMATE,
 	GS_PLAY_PROMOTE,
 	GS_GAME_OVER,
 	GS_MAIN_MENU,
@@ -95,18 +96,18 @@ typedef struct Sprite
 // function GameSwitchState(...) to switch states.
 typedef struct GameContext
 {
+	int isDebug;  // higher number generally means more info
+	int ticks;
+	int tileSize;
+	Vector2 boardOffset;  // pixels
+	GameState state;  // see note above (9 lines above this one)
 	Texture2D texPieces;  // spritesheet textures for pieces
 	Texture2D texBoard;  // spritesheet textures for board and background
 	Texture2D texGUI;  // spritesheet textures for user interface specific stuff
-	int ticks;
-	GameState state;  // see note above (9 lines above this one)
 	NormalChess *normalChess;
-	int tileSize;
-	Vector2 boardOffset;  // pixels
-	Vector2 clickStart;  // pixels
 	Vector2 *arrDraggedPieceMoves;  // board coordinates (col, row)
-	int isDebug;  // higher number generally means more info
 	Sprite *arrSprites; // dynamic array of sprites
+	Sprite *refSelectedSprite;
 } GameContext;
 
 // Clamp value to a value between min and max, inclusive of min and max.
@@ -120,6 +121,13 @@ void IntClamp(int *value, int min, int max)
 	{
 		*value = max;
 	}
+}
+
+float Vector2DistanceSquared(Vector2 a, Vector2 b)
+{
+	float dx = a.x - b.x;
+	float dy = a.y - b.y;
+	return dx * dx + dy * dy;
 }
 
 const char *GameStateToStr(GameState s)
@@ -193,19 +201,20 @@ NormalChessKind PieceKingOf(const NormalChessPiece *p)
 }
 
 // Search dynamic array for vector2
-int Vector2ArrFind(Vector2 *arrVectors, Vector2 val)
+Vector2 *Vector2ArrFind(Vector2 *arrVectors, Vector2 val)
 {
 	for (int i = 0; i < arrlen(arrVectors); i++)
 	{
-		Vector2 val2 = arrVectors[i];
-		if (val2.x == val.x && val2.y == val.y)
+		Vector2 *val2 = &arrVectors[i];
+		if (val2->x == val.x && val2->y == val.y)
 		{
-			return i;
+			return val2;
 		}
 	}
-	return -1;
+	return NULL;
 }
 
+// Find any sprite at screen coords (x, y)
 Sprite *SpritesArrFindSpriteAt(Sprite *arrSprites, int x, int y)
 {
 	Vector2 p = (Vector2){ x, y };
@@ -220,14 +229,19 @@ Sprite *SpritesArrFindSpriteAt(Sprite *arrSprites, int x, int y)
 	return NULL;
 }
 
-Sprite *SpritesArrFindSpriteForPiece(Sprite *arrSprites, NormalChessPiece *p)
+Sprite *SpritesArrFindNormalChessSpriteAt(Sprite *arrSprites, int col, int row)
 {
 	for (int i = 0; i < arrlen(arrSprites); i++)
 	{
 		Sprite *s = &arrSprites[i];
-		if (s->data.kind == SK_NORMAL_CHESS_PIECE && s->data.as_normalChessPiece == p)
+		if (s->data.kind == SK_NORMAL_CHESS_PIECE)
 		{
-			return s;
+			NormalChessPiece *p = s->data.as_normalChessPiece;
+			assert(p);
+			if (p->col == col && p->row == row)
+			{
+				return s;
+			}
 		}
 	}
 	return NULL;
@@ -1307,18 +1321,19 @@ NormalChessPiece *GameGetPieceAt(const GameContext *game, Vector2 screenPos)
 	return PiecesGetAt(game->normalChess->arrPieces, row, col);
 }
 
+// TODO: do we need to use this?
 NormalChessPiece *GameGetValidSelectedPiece(const GameContext *game)
 {
 	assert(game);
-	NormalChessPiece *p = GameGetPieceAt(game, game->clickStart);
-	if (p && NormalChessCanUsePiece(game->normalChess, p))
+	if (game->refSelectedSprite && game->refSelectedSprite->data.kind == SK_NORMAL_CHESS_PIECE)
 	{
-		return p;
+		NormalChessPiece *p = game->refSelectedSprite->data.as_normalChessPiece;
+		if (NormalChessCanUsePiece(game->normalChess, p))
+		{
+			return p;
+		}
 	}
-	else
-	{
-		return NULL;
-	}
+	return NULL;
 }
 
 // NOTE: this automatically frees the dynamic array (arrDraggedPieceMoves)
@@ -1339,33 +1354,82 @@ void UpdateMoveSquares(GameContext *game)
 	}
 }
 
+void GameDoMoveNormalChess(GameContext *game, int targetCol, int targetRow)
+{
+	assert(game);
+	assert(game->normalChess);
+	assert(game->refSelectedSprite);
+	NormalChessPiece *p = GameGetValidSelectedPiece(game);
+	assert(p);
+	NormalChessDoFullMove(game->normalChess, p->row, p->col, targetRow, targetCol);
+	SpriteMoveToNormalChessPiece(game->refSelectedSprite, game);
+	game->refSelectedSprite = NULL;
+	UpdateMoveSquares(game);
+}
+
 void UpdatePlay(GameContext *game)
 {
 	Vector2 mousePos = GetMousePosition();
+	const int drag = 10; // minimum dx or dy for considering a mouse motion while clicked as a drag.
 	if (IsMouseButtonPressed(0))
 	{
-		// TODO: handle mouse press.
-		game->clickStart = mousePos;
+		// Handle mouse first pressed.
+		if (GameIsPointOnBoard(game, mousePos))
+		{
+			int col, row;
+			ScreenToNormalChessPos(mousePos.x, mousePos.y, game->boardOffset.x, game->boardOffset.y,
+					game->tileSize, &row, &col);
+			Vector2 mouseSquare = (Vector2){ col, row };
+			// Otherwise check for click on a valid piece.
+			if (!(game->refSelectedSprite && Vector2ArrFind(game->arrDraggedPieceMoves, mouseSquare)))
+			{
+				Sprite *s = SpritesArrFindNormalChessSpriteAt(game->arrSprites, col, row);
+				if (s && NormalChessCanUsePiece(game->normalChess, s->data.as_normalChessPiece))
+				{
+					game->refSelectedSprite = s;
+				}
+				else
+				{
+					game->refSelectedSprite = NULL;
+				}
+				UpdateMoveSquares(game);
+			}
+		}
 	}
 	else if (IsMouseButtonReleased(0))
 	{
 		// TODO: handle mouse release.
-		NormalChessPiece *p = GameGetValidSelectedPiece(game);
-		if (p)
+		if (game->refSelectedSprite)
 		{
-			Sprite *s = SpritesArrFindSpriteForPiece(game->arrSprites, p);
-			SpriteMoveToNormalChessPiece(s, game);
+			SpriteMoveToNormalChessPiece(game->refSelectedSprite, game);
+			int col, row;
+			ScreenToNormalChessPos(mousePos.x, mousePos.y, game->boardOffset.x, game->boardOffset.y,
+					game->tileSize, &row, &col);
+			Vector2 mouseSquare = (Vector2){ col, row };
+			if (Vector2ArrFind(game->arrDraggedPieceMoves, mouseSquare))
+			{
+				// Released mouse over a valid movement square for the piece.
+				GameDoMoveNormalChess(game, col, row);
+				assert(!game->refSelectedSprite);
+				assert(!game->arrDraggedPieceMoves);
+			}
 		}
 	}
-	else if (IsMouseButtonDown(0) 
-			&& (abs(mousePos.x - game->clickStart.x) > 3 || abs(mousePos.y - game->clickStart.y) > 3))
+	else if (IsMouseButtonDown(0))
 	{
-		// TODO: handle mouse down, move dragged sprite.
-		NormalChessPiece *p = GameGetValidSelectedPiece(game);
-		if (p)
+		if (game->refSelectedSprite)
 		{
-			Sprite *s = SpritesArrFindSpriteForPiece(game->arrSprites, p);
-			SpriteMoveCenter(s, mousePos.x, mousePos.y);
+			// Move the current sprite if the mouse is far enough away.
+			int x, y;
+			int row = game->refSelectedSprite->data.as_normalChessPiece->row;
+			int col = game->refSelectedSprite->data.as_normalChessPiece->col;
+			NormalChessPosToScreen(row, col, game->boardOffset.x, game->boardOffset.y, game->tileSize,
+					&x, &y);
+			Vector2 originalPos = (Vector2){ x + game->tileSize/2, y + game->tileSize/2 };
+			if (Vector2DistanceSquared(mousePos, originalPos) >= drag)
+			{
+				SpriteMoveCenter(game->refSelectedSprite, mousePos.x, mousePos.y);
+			}
 		}
 	}
 }
@@ -1482,11 +1546,6 @@ void DrawPlay(const GameContext *game)
 	int tileSize = game->tileSize;
 	ClearBackground(DARKGREEN);
 	DrawChessBoard(x0, y0, tileSize, 8, 8);
-	// Draw sprites
-	for (int i = 0; i < arrlen(game->arrSprites); i++)
-	{
-		DrawSprite(game, &game->arrSprites[i]);
-	}
 	// Draw move highlight squares.
 	for (int i = 0; i < arrlen(game->arrDraggedPieceMoves); i++)
 	{
@@ -1496,15 +1555,20 @@ void DrawPlay(const GameContext *game)
 		DrawRectangle(x, y, tileSize, tileSize, HI_COLOR);
 	}
 	// Draw selected piece highlight square.
-	if (GameIsPointOnBoard(game, game->clickStart))
+	if (game->refSelectedSprite)
 	{
-		const NormalChessPiece *p = GameGetValidSelectedPiece(game);
+		const NormalChessPiece *p = game->refSelectedSprite->data.as_normalChessPiece;
 		if (p)
 		{
 			int x, y;
 			NormalChessPosToScreen(p->row, p->col, x0, y0, tileSize, &x, &y);
 			DrawRectangle(x, y, tileSize, tileSize, SELECT_COLOR);
 		}
+	}
+	// Draw sprites
+	for (int i = 0; i < arrlen(game->arrSprites); i++)
+	{
+		DrawSprite(game, &game->arrSprites[i]);
 	}
 	// Debug info
 	if (game->isDebug)
@@ -1575,14 +1639,6 @@ void DrawDebug(const GameContext *game)
 	}
 	// Display the current debug level
 	DrawText(TextFormat("debug level: %d", game->isDebug), 0, 0, 16, GREEN);
-	// Draw the clickStart position
-	DrawRectangleLines(game->clickStart.x-1, game->clickStart.y-1, 3, 3, RED);
-	if (game->isDebug >= 2 && IsMouseButtonDown(0))
-	{
-		// Draw line to mousePos
-		Vector2 mousePos = GetMousePosition();
-		DrawLine(game->clickStart.x, game->clickStart.y, mousePos.x, mousePos.y, WHITE);
-	}
 	if (game->isDebug >= 3)
 	{
 		// Current state
@@ -1639,11 +1695,11 @@ int main(void) {
 		.isDebug              = 0, // integer for game debug flag, higher number means more debug info
 		.state                = GS_MAIN_MENU,
 		.ticks                = 0,
-		.clickStart           = (Vector2) { -1, -1 },
 		.normalChess          = NULL,
 		.boardOffset          = (Vector2) { 160, 110 },
 		.tileSize             = TEXTURE_TILE_SIZE * 2,
 		.arrDraggedPieceMoves = NULL,
+		.refSelectedSprite    = NULL,
 		.arrSprites           = NULL,
 		.texPieces            = LoadTexture("gfx/pieces.png"),
 		.texBoard             = LoadTexture("gfx/board.png"),
@@ -1662,3 +1718,4 @@ int main(void) {
 	CloseWindow();
     return 0;
 }
+
