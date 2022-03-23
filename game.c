@@ -13,7 +13,6 @@
 #define abs(x) (((x) > 0)? (x) : -(x))
 #define sign(x) ((x)? (((x) > 0)? 1 : -1) : 0)
 
-// TODO: fix sprite's reference to a piece getting invalidated after a move.
 // TODO: fix not allowing pinned piece to capture (see TODO below later in file).
 // TODO: implement pawn promotion.
 // TODO: add game turn timers.
