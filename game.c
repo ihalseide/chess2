@@ -109,7 +109,6 @@ typedef struct GameContext
 	Sprite *arrSprites; // dynamic array of sprites
 } GameContext;
 
-
 const char *GameStateToStr(GameState s)
 {
 	switch (s)
@@ -145,21 +144,67 @@ const char *NormalChessKindToStr(NormalChessKind k)
 	}
 }
 
+// Get the king of a chess piece kind.
+NormalChessKind NormalChessKingKind(NormalChessKind k)
+{
+	switch (k)
+	{
+		case WHITE_KING:
+		case WHITE_QUEEN:
+		case WHITE_ROOK:
+		case WHITE_BISHOP:
+		case WHITE_KNIGHT:
+		case WHITE_PAWN:
+			return WHITE_KING;
+		case BLACK_KING:
+		case BLACK_QUEEN:
+		case BLACK_ROOK:
+		case BLACK_BISHOP:
+		case BLACK_KNIGHT:
+		case BLACK_PAWN:
+			return BLACK_KING;
+		default:
+			assert(0 && "invalid piece kind");
+	}
+}
+
+NormalChessKind NormalChessEnemyKingKind(NormalChessKind k)
+{
+	return (NormalChessKingKind(k) == WHITE_KING)? BLACK_KING : WHITE_KING;
+}
+
+NormalChessKind PieceKingOf(const NormalChessPiece *p)
+{
+	assert(p);
+	return NormalChessKingKind(p->kind);
+}
+
 // Search dynamic array for vector2
 int Vector2ArrFind(Vector2 *arrVectors, Vector2 val)
 {
-	if (arrVectors)
+	for (int i = 0; i < arrlen(arrVectors); i++)
 	{
-		for (int i = 0; i < arrlen(arrVectors); i++)
+		Vector2 val2 = arrVectors[i];
+		if (val2.x == val.x && val2.y == val.y)
 		{
-			Vector2 val2 = arrVectors[i];
-			if (val2.x == val.x && val2.y == val.y)
-			{
-				return i;
-			}
+			return i;
 		}
 	}
 	return -1;
+}
+
+Sprite *SpritesArrFindSpriteAt(Sprite *arrSprites, int x, int y)
+{
+	Vector2 p = (Vector2){ x, y };
+	for (int i = 0; i < arrlen(arrSprites); i++)
+	{
+		Sprite *s = &arrSprites[i];
+		if (CheckCollisionPointRec(p, s->boundingBox))
+		{
+			return s;
+		}
+	}
+	return NULL;
 }
 
 // Move a sprite so that it is centered at the given position.
@@ -180,9 +225,24 @@ void ClearMoveSquares(GameContext *game)
 	game->arrDraggedPieceMoves = NULL;
 }
 
-int NormalChessPieceTeamEq(NormalChessPiece *a, NormalChessPiece *b)
+int NormalChessTeamEq(NormalChessKind a, NormalChessKind b)
 {
-	return a && b && (a->kind < BLACK_KING) == (b->kind < BLACK_KING);
+	return NormalChessKingKind(a) == NormalChessKingKind(b);
+}
+
+int NormalChessPieceTeamEq(const NormalChessPiece *a, const NormalChessPiece *b)
+{
+	return a && b && NormalChessTeamEq(a->kind, b->kind);
+}
+
+NormalChessKind NormalChessCurrentKing(const NormalChess *chess)
+{
+	return (chess->turn % 2 == 0)? WHITE_KING : BLACK_KING;
+}
+
+int NormalChessCanUsePiece(const NormalChess *chess, const NormalChessPiece *p)
+{
+	return chess && p && NormalChessTeamEq(p->kind, NormalChessCurrentKing(chess));
 }
 
 // Convert screen coordinates to Tile coordinates
@@ -405,49 +465,14 @@ void PiecesRemovePieceAt(NormalChessPiece **arrPieces, int row, int col)
 	}
 }
 
-// Get the king of a chess piece kind.
-NormalChessKind NormalChessKingKind(NormalChessKind k)
-{
-	switch (k)
-	{
-		case WHITE_KING:
-		case WHITE_QUEEN:
-		case WHITE_ROOK:
-		case WHITE_BISHOP:
-		case WHITE_KNIGHT:
-		case WHITE_PAWN:
-			return WHITE_KING;
-		case BLACK_KING:
-		case BLACK_QUEEN:
-		case BLACK_ROOK:
-		case BLACK_BISHOP:
-		case BLACK_KNIGHT:
-		case BLACK_PAWN:
-			return BLACK_KING;
-		default:
-			assert(0 && "invalid piece kind");
-	}
-}
-
-NormalChessKind NormalChessEnemyKingKind(NormalChessKind k)
-{
-	return (NormalChessKingKind(k) == WHITE_KING)? BLACK_KING : WHITE_KING;
-}
-
-NormalChessKind PieceKingOf(NormalChessPiece *p)
-{
-	assert(p);
-	return NormalChessKingKind(p->kind);
-}
-
 // Find the king piece for a kind.
-NormalChessPiece *PiecesFindKing(NormalChessPiece **arrPieces, NormalChessKind k)
+const NormalChessPiece *PiecesFindKing(const NormalChessPiece **arrPieces, NormalChessKind k)
 {
 	assert(arrPieces);
 	NormalChessKind king = NormalChessKingKind(k);
 	for (int i = 0; i < arrlen(arrPieces); i++)
 	{
-		NormalChessPiece *p = arrPieces[i];
+		const NormalChessPiece *p = arrPieces[i];
 		assert(p);
 		if (p->kind == king)
 		{
@@ -464,6 +489,19 @@ NormalChessPiece *PiecesGetAt(NormalChessPiece **arrPieces, int row, int col)
 	for (int i = 0; i < arrlen(arrPieces); i++)
 	{
 		NormalChessPiece *p = arrPieces[i];
+		if (p->row == row && p->col == col)
+		{
+			return p;
+		}
+	}
+	return NULL;
+}
+
+const NormalChessPiece *PiecesGetAtConst(const NormalChessPiece **arrPieces, int row, int col)
+{
+	for (int i = 0; i < arrlen(arrPieces); i++)
+	{
+		const NormalChessPiece *p = arrPieces[i];
 		if (p->row == row && p->col == col)
 		{
 			return p;
@@ -572,7 +610,8 @@ int NormalChessMovesContains(const NormalChessPiece *p, int row, int col)
 }
 
 // Pawns and sliding pieces
-int PiecesMoveIsBlocked(NormalChessPiece **arrPieces, NormalChessPiece *p, int targetRow, int targetCol)
+int PiecesMoveIsBlocked(const NormalChessPiece **arrPieces, const NormalChessPiece *p, int targetRow,
+		int targetCol)
 {
 	assert(arrPieces);
 	assert(p);
@@ -582,8 +621,7 @@ int PiecesMoveIsBlocked(NormalChessPiece **arrPieces, NormalChessPiece *p, int t
 		case BLACK_PAWN:
 			// Pawn is blocked for diagonal moves if there is no
 			// piece for it to capture at the square.
-			return targetCol != p->col
-					&& !PiecesGetAt(arrPieces, targetRow, targetCol);
+			return targetCol != p->col && !PiecesGetAtConst(arrPieces, targetRow, targetCol);
 		case WHITE_QUEEN:
 		case BLACK_QUEEN:
 		case WHITE_BISHOP:
@@ -600,7 +638,7 @@ int PiecesMoveIsBlocked(NormalChessPiece **arrPieces, NormalChessPiece *p, int t
 				while (!(row == targetRow && col == targetCol)
 						&& row >= 0 && row <= 7
 						&& col >= 0 && col <= 7
-						&& !PiecesGetAt(arrPieces, row, col))
+						&& !PiecesGetAtConst(arrPieces, row, col))
 				{
 					row += dRow;
 					col += dCol;
@@ -613,12 +651,12 @@ int PiecesMoveIsBlocked(NormalChessPiece **arrPieces, NormalChessPiece *p, int t
 	}
 }
 
-int PiecesCanTeamCaptureSpot(NormalChessPiece **arrPieces, NormalChessKind team, int targetRow,
+int PiecesCanTeamCaptureSpot(const NormalChessPiece **arrPieces, NormalChessKind team, int targetRow,
 		int targetCol)
 {
 	for (int i = 0; i < arrlen(arrPieces); i++)
 	{
-		NormalChessPiece *member = arrPieces[i];
+		const NormalChessPiece *member = arrPieces[i];
 		assert(member);
 		// Note: do not check special moves.
 		if (PieceKingOf(member) == NormalChessKingKind(team)
@@ -635,8 +673,7 @@ int PiecesCanTeamCaptureSpot(NormalChessPiece **arrPieces, NormalChessKind team,
 // Special moves in normal chess:
 //  - Pawns -> double first move and en passant
 //  - Kings -> castling
-int NormalChessSpecialMovesContains(const NormalChess *chess,
-		const NormalChessPiece *p, int row, int col)
+int NormalChessSpecialMovesContains(const NormalChess *chess, const NormalChessPiece *p, int row, int col)
 {
 	if (!p)
 	{
@@ -645,6 +682,7 @@ int NormalChessSpecialMovesContains(const NormalChess *chess,
 	int dRow = row - p->row;
 	int dCol = col - p->col;
 	NormalChessKind enemyKing = NormalChessEnemyKingKind(p->kind);
+	const NormalChessPiece **arrPiecesConst = (const NormalChessPiece **) chess->arrPieces;
 	switch (p->kind)
 	{
 		case WHITE_PAWN:
@@ -657,7 +695,7 @@ int NormalChessSpecialMovesContains(const NormalChess *chess,
 			else if (p->row == 4 && dRow == 1 && chess->doublePawnCol == col)
 			{
 				// En passant
-				NormalChessPiece *other = PiecesGetAt(chess->arrPieces, p->row, col);
+				const NormalChessPiece *other = PiecesGetAtConst(arrPiecesConst, p->row, col);
 				return other && other->kind == BLACK_PAWN;
 			}
 			else
@@ -682,40 +720,43 @@ int NormalChessSpecialMovesContains(const NormalChess *chess,
 				return 0;
 			}
 		case WHITE_KING:
-			if (PiecesCanTeamCaptureSpot(chess->arrPieces, enemyKing, p->row, p->col))
 			{
-				// Cannot castle when in the king is in check.
-				return 0;
-			}
-			else if (dCol > 0)
-			{
-				// King's side castle
-				return !chess->hasWhiteKingMoved 
-					&& !chess->hasWhiteKingsRookMoved
-					&& dCol == 2
-					&& dRow == 0
-					&& !PiecesGetAt(chess->arrPieces, p->row, p->col + 1)
-					&& !PiecesCanTeamCaptureSpot(chess->arrPieces, enemyKing, p->row, p->col + 1)
-					&& !PiecesCanTeamCaptureSpot(chess->arrPieces, enemyKing, p->row, p->col + 2);
-			}
-			else if (dCol < 0)
-			{
-				// Queen's side castle
-				return !chess->hasWhiteKingMoved 
-					&& !chess->hasWhiteQueensRookMoved
-					&& dCol == -2
-					&& dRow == 0
-					&& !PiecesGetAt(chess->arrPieces, p->row, p->col - 1)
-					&& !PiecesCanTeamCaptureSpot(chess->arrPieces, enemyKing, p->row, p->col - 1)
-					&& !PiecesCanTeamCaptureSpot(chess->arrPieces, enemyKing, p->row, p->col - 2)
-					&& !PiecesCanTeamCaptureSpot(chess->arrPieces, enemyKing, p->row, p->col - 3);
-			}
-			else
-			{
-				return 0;
+				if (PiecesCanTeamCaptureSpot(arrPiecesConst, enemyKing, p->row, p->col))
+				{
+					// Cannot castle when in the king is in check.
+					return 0;
+				}
+				else if (dCol > 0)
+				{
+					// King's side castle
+					return !chess->hasWhiteKingMoved 
+						&& !chess->hasWhiteKingsRookMoved
+						&& dCol == 2
+						&& dRow == 0
+						&& !PiecesGetAtConst(arrPiecesConst, p->row, p->col + 1)
+						&& !PiecesCanTeamCaptureSpot(arrPiecesConst, enemyKing, p->row, p->col + 1)
+						&& !PiecesCanTeamCaptureSpot(arrPiecesConst, enemyKing, p->row, p->col + 2);
+				}
+				else if (dCol < 0)
+				{
+					// Queen's side castle
+					return !chess->hasWhiteKingMoved 
+						&& !chess->hasWhiteQueensRookMoved
+						&& dCol == -2
+						&& dRow == 0
+						&& !PiecesGetAt(chess->arrPieces, p->row, p->col - 1)
+						&& !PiecesCanTeamCaptureSpot(arrPiecesConst, enemyKing, p->row, p->col - 1)
+						&& !PiecesCanTeamCaptureSpot(arrPiecesConst, enemyKing, p->row, p->col - 2)
+						&& !PiecesCanTeamCaptureSpot(arrPiecesConst, enemyKing, p->row, p->col - 3);
+				}
+				else
+				{
+					return 0;
+				}
+				break;
 			}
 		case BLACK_KING:
-			if (PiecesCanTeamCaptureSpot(chess->arrPieces, enemyKing, p->row, p->col))
+			if (PiecesCanTeamCaptureSpot(arrPiecesConst, enemyKing, p->row, p->col))
 			{
 				// Cannot castle when in the king is in check.
 				return 0;
@@ -727,9 +768,9 @@ int NormalChessSpecialMovesContains(const NormalChess *chess,
 					&& !chess->hasBlackKingsRookMoved
 					&& dCol == 2
 					&& dRow == 0
-					&& !PiecesGetAt(chess->arrPieces, p->row, p->col + 1)
-					&& !PiecesCanTeamCaptureSpot(chess->arrPieces, enemyKing, p->row, p->col + 1)
-					&& !PiecesCanTeamCaptureSpot(chess->arrPieces, enemyKing, p->row, p->col + 2);
+					&& !PiecesGetAtConst(arrPiecesConst, p->row, p->col + 1)
+					&& !PiecesCanTeamCaptureSpot(arrPiecesConst, enemyKing, p->row, p->col + 1)
+					&& !PiecesCanTeamCaptureSpot(arrPiecesConst, enemyKing, p->row, p->col + 2);
 			}
 			else if (dCol < 0)
 			{
@@ -738,10 +779,10 @@ int NormalChessSpecialMovesContains(const NormalChess *chess,
 					&& !chess->hasBlackQueensRookMoved
 					&& dCol == -2
 					&& dRow == 0
-					&& !PiecesGetAt(chess->arrPieces, p->row, p->col - 1)
-					&& !PiecesCanTeamCaptureSpot(chess->arrPieces, enemyKing, p->row, p->col - 1)
-					&& !PiecesCanTeamCaptureSpot(chess->arrPieces, enemyKing, p->row, p->col - 2)
-					&& !PiecesCanTeamCaptureSpot(chess->arrPieces, enemyKing, p->row, p->col - 3);
+					&& !PiecesGetAtConst(arrPiecesConst, p->row, p->col - 1)
+					&& !PiecesCanTeamCaptureSpot(arrPiecesConst, enemyKing, p->row, p->col - 1)
+					&& !PiecesCanTeamCaptureSpot(arrPiecesConst, enemyKing, p->row, p->col - 2)
+					&& !PiecesCanTeamCaptureSpot(arrPiecesConst, enemyKing, p->row, p->col - 3);
 			}
 			else
 			{
@@ -933,10 +974,11 @@ void NormalChessDoFullMove(NormalChess *chess, int startRow, int startCol,
 // TODO: check the case if the move is a capture, because this function is
 // currently causing a bug where capturing is not allowed even if the capture
 // un-pins the piece.
-int PiecesIsPiecePinned(NormalChessPiece **arrPieces, NormalChessPiece *p, int targetRow, int targetCol)
+int PiecesIsPiecePinned(const NormalChessPiece **arrPieces, NormalChessPiece *p, int targetRow,
+		int targetCol)
 {
 	assert(p);
-	NormalChessPiece *king = PiecesFindKing(arrPieces, p->kind);
+	const NormalChessPiece *king = PiecesFindKing(arrPieces, p->kind);
 	if (!king)
 	{
 		// No king means that the pieces cannot move.
@@ -956,36 +998,37 @@ int PiecesIsPiecePinned(NormalChessPiece **arrPieces, NormalChessPiece *p, int t
 	return isPinned;
 }
 
-int NormalChessAllMovesContains(NormalChess *c, NormalChessPiece *p, int row, int col)
+int NormalChessAllMovesContains(const NormalChess *c, NormalChessPiece *p, int row, int col)
 {
 	// Must be a square within the piece's normal moves or special moves.
 	int normal = NormalChessMovesContains(p, row, col);
 	int special = NormalChessSpecialMovesContains(c, p, row, col);
+	const NormalChessPiece **arrPiecesConst = (const NormalChessPiece**) c->arrPieces;
 	if (!normal && !special)
 	{
 		return 0;
 	}
 	// A piece cannot capture any pieces on the same team.
-	NormalChessPiece *other = PiecesGetAt(c->arrPieces, row, col);
+	const NormalChessPiece *other = PiecesGetAtConst(arrPiecesConst, row, col);
 	if (other && NormalChessPieceTeamEq(p, other))
 	{
 		return 0;
 	}
 	// A sliding piece's moves are blocked by the first piece hit.
 	// TODO: comment why is the !special is here again?
-	if (!special && PiecesMoveIsBlocked(c->arrPieces, p, row, col))
+	if (!special && PiecesMoveIsBlocked(arrPiecesConst, p, row, col))
 	{
 		return 0;
 	}
 	// A piece may not move if it is pinned to the king
-	if (PiecesIsPiecePinned(c->arrPieces, p, row, col))
+	if (PiecesIsPiecePinned(arrPiecesConst, p, row, col))
 	{
 		return 0;
 	}
 	// Exception: pawns cannot capture forward.
 	if ((p->kind == WHITE_PAWN || p->kind == BLACK_PAWN)
 			&& col == p->col
-			&& PiecesGetAt(c->arrPieces, row, col))
+			&& PiecesGetAtConst(arrPiecesConst, row, col))
 	{
 		return 0;
 	}
@@ -997,7 +1040,7 @@ int NormalChessAllMovesContains(NormalChess *c, NormalChessPiece *p, int row, in
 // NOTE: if creating these dynamic lists of move squares is too slow, etc, then
 // we can just keep a one-time-allocated array of booleans for whether each
 // square on the board can be moved to.
-Vector2 *NormalChessCreatePieceMoveList(NormalChess *c, NormalChessPiece *p)
+Vector2 *NormalChessCreatePieceMoveList(const NormalChess *c, NormalChessPiece *p)
 {
 	Vector2 *result = NULL;
 	for (int row = 0; row < 8; row++)
@@ -1014,21 +1057,17 @@ Vector2 *NormalChessCreatePieceMoveList(NormalChess *c, NormalChessPiece *p)
 	return result;
 }
 
-NormalChessKind NormalChessCurrentKing(NormalChess *chess)
-{
-	return (chess->turn % 2 == 0)? WHITE_KING : BLACK_KING;
-}
-
 int NormalChessIsKingInCheck(NormalChess *chess)
 {
 	NormalChessKind currentKing = NormalChessCurrentKing(chess);
-	NormalChessPiece *king = PiecesFindKing(chess->arrPieces, currentKing);
+	const NormalChessPiece **arrPiecesConst = (const NormalChessPiece **) chess->arrPieces;
+	const NormalChessPiece *king = PiecesFindKing(arrPiecesConst, currentKing);
 	if (!king)
 	{
 		return 0;
 	}
-	return PiecesCanTeamCaptureSpot(chess->arrPieces,
-			NormalChessEnemyKingKind(currentKing), king->row, king->col);
+	return PiecesCanTeamCaptureSpot(arrPiecesConst, NormalChessEnemyKingKind(currentKing), king->row,
+			king->col);
 }
 
 int NormalChessCanMove(NormalChess *chess)
@@ -1070,8 +1109,8 @@ int NormalChessIsCheckmate(NormalChess *chess)
 int NormalChessIsGameOver(NormalChess *chess)
 {
 	return !NormalChessCanMove(chess)
-		|| !PiecesFindKing(chess->arrPieces, WHITE_KING)
-		|| !PiecesFindKing(chess->arrPieces, BLACK_KING);
+		|| !PiecesFindKing((const NormalChessPiece **)chess->arrPieces, WHITE_KING)
+		|| !PiecesFindKing((const NormalChessPiece **)chess->arrPieces, BLACK_KING);
 }
 
 // Initially create the sprites for the pieces in a normal chess game.
@@ -1220,7 +1259,7 @@ int GameIsPointOnBoard(const GameContext *game, Vector2 screenPos)
 	return CheckCollisionPointRec(screenPos, GameGetBoardRect(game));
 }
 
-NormalChessPiece *GameGetPieceAt(GameContext *game, Vector2 screenPos)
+NormalChessPiece *GameGetPieceAt(const GameContext *game, Vector2 screenPos)
 {
 	int x0 = game->boardOffset.x;
 	int y0 = game->boardOffset.y;
@@ -1234,11 +1273,11 @@ NormalChessPiece *GameGetPieceAt(GameContext *game, Vector2 screenPos)
 	return PiecesGetAt(game->normalChess->arrPieces, row, col);
 }
 
-NormalChessPiece *GameGetValidSelectedPiece(GameContext *game)
+NormalChessPiece *GameGetValidSelectedPiece(const GameContext *game)
 {
 	assert(game);
 	NormalChessPiece *p = GameGetPieceAt(game, game->clickStart);
-	if (p && PieceKingOf(p) == NormalChessCurrentKing(game->normalChess))
+	if (p && NormalChessCanUsePiece(game->normalChess, p))
 	{
 		return p;
 	}
@@ -1271,19 +1310,15 @@ void UpdatePlay(GameContext *game)
 	Vector2 mousePos = GetMousePosition();
 	if (IsMouseButtonPressed(0))
 	{
-		game->clickStart = mousePos;
-		UpdateMoveSquares(game);
+		// TODO: handle mouse press.
 	}
 	else if (IsMouseButtonReleased(0))
 	{
-		if (GameIsPointOnBoard(game, mousePos))
-		{
-			//
-		}
-		else
-		{
-			//
-		}
+		// TODO: handle mouse release.
+	}
+	else if (IsMouseButtonPressed(0))
+	{
+		// TODO: handle mouse down, move dragged sprite.
 	}
 }
 
@@ -1415,7 +1450,7 @@ void DrawPlay(const GameContext *game)
 	// Draw selected piece highlight square.
 	if (GameIsPointOnBoard(game, game->clickStart))
 	{
-		NormalChessPiece *p = GameGetValidSelectedPiece(game);
+		const NormalChessPiece *p = GameGetValidSelectedPiece(game);
 		if (p)
 		{
 			int x, y;
@@ -1490,7 +1525,10 @@ void DrawDebug(const GameContext *game)
 	{
 		return;
 	}
+	// Display the current debug level
 	DrawText(TextFormat("debug level: %d", game->isDebug), 0, 0, 16, GREEN);
+	// Draw the clickStart position
+	DrawRectangleLines(game->clickStart.x-1, game->clickStart.y-1, 3, 3, RED);
 	if (game->isDebug >= 2)
 	{
 		// Current state
@@ -1552,6 +1590,7 @@ int main(void) {
 		.boardOffset          = (Vector2) { 160, 110 },
 		.tileSize             = TEXTURE_TILE_SIZE * 2,
 		.arrDraggedPieceMoves = NULL,
+		.arrSprites           = NULL,
 		.texPieces            = LoadTexture("gfx/pieces.png"),
 		.texBoard             = LoadTexture("gfx/board.png"),
 		.texGUI               = LoadTexture("gfx/gui.png"),
