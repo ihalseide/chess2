@@ -109,6 +109,19 @@ typedef struct GameContext
 	Sprite *arrSprites; // dynamic array of sprites
 } GameContext;
 
+// Clamp value to a value between min and max, inclusive of min and max.
+void IntClamp(int *value, int min, int max)
+{
+	if (*value < min)
+	{
+		*value = min;
+	}
+	if (*value > max)
+	{
+		*value = max;
+	}
+}
+
 const char *GameStateToStr(GameState s)
 {
 	switch (s)
@@ -274,12 +287,12 @@ void ScreenToNormalChessPos(int pX, int pY, int x0, int y0, int tileSize, int *r
 	ScreenToTile(pX, pY, x0, y0, tileSize, &tx, &ty); 
 	// Flip row direction.
 	ty = 7 - ty;
-	assert(tx >= 0);
-	assert(tx <= 7);
-	assert(ty >= 0);
-	assert(ty <= 7);
-	*row = ty;
+	IntClamp(&tx, 0, 7);
+	IntClamp(&ty, 0, 7);
+	assert(tx >= 0 && tx <= 7);
+	assert(ty >= 0 && ty <= 7);
 	*col = tx;
+	*row = ty;
 }
 
 // Inverse of ScreenToNormalChessPos
@@ -287,10 +300,8 @@ void NormalChessPosToScreen(int row, int col, int x0, int y0, int tileSize, int 
 {
 	// Flip row direction.
 	row = 7 - row;
-	assert(row >= 0);
-	assert(row <= 7);
-	assert(col >= 0);
-	assert(col <= 7);
+	assert(row >= 0 && row <= 7);
+	assert(col >= 0 && col <= 7);
 	TileToScreen(col, row, x0, y0, tileSize, x, y);
 }
 
@@ -1311,12 +1322,13 @@ void UpdatePlay(GameContext *game)
 	if (IsMouseButtonPressed(0))
 	{
 		// TODO: handle mouse press.
+		game->clickStart = mousePos;
 	}
 	else if (IsMouseButtonReleased(0))
 	{
 		// TODO: handle mouse release.
 	}
-	else if (IsMouseButtonPressed(0))
+	else if (IsMouseButtonDown(0))
 	{
 		// TODO: handle mouse down, move dragged sprite.
 	}
@@ -1468,7 +1480,7 @@ void DrawPlay(const GameContext *game)
 					190, 20, 20, WHITE);
 		}
 		// draw list of game pieces
-		if (game->isDebug >= 3)
+		if (game->isDebug >= 6)
 		{
 			char msg[50];
 			int scroll = -2 * (game->ticks % 100);
@@ -1529,12 +1541,18 @@ void DrawDebug(const GameContext *game)
 	DrawText(TextFormat("debug level: %d", game->isDebug), 0, 0, 16, GREEN);
 	// Draw the clickStart position
 	DrawRectangleLines(game->clickStart.x-1, game->clickStart.y-1, 3, 3, RED);
-	if (game->isDebug >= 2)
+	if (game->isDebug >= 2 && IsMouseButtonDown(0))
+	{
+		// Draw line to mousePos
+		Vector2 mousePos = GetMousePosition();
+		DrawLine(game->clickStart.x, game->clickStart.y, mousePos.x, mousePos.y, WHITE);
+	}
+	if (game->isDebug >= 3)
 	{
 		// Current state
 		DrawText(TextFormat("game state: %s", GameStateToStr(game->state)), 10, 10, 20, GREEN);
 	}
-	if (game->isDebug >= 3)
+	if (game->isDebug >= 4)
 	{
 		// Tick count
 		DrawText(TextFormat("game ticks: %d", game->ticks), 10, 36, 20, GREEN);
