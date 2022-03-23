@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-Wall -g -std=c99
+CFLAGS=-g -std=c99
 LFLAGS=
 LIBS=-lraylib -lm -ldl -lpthread
 
