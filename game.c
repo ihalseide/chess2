@@ -1595,7 +1595,8 @@ void GameDoMoveNormalChess(GameContext *game, int targetCol, int targetRow)
 void UpdatePlay(GameContext *game)
 {
 	Vector2 mousePos = GetMousePosition();
-	const int drag = 10; // minimum dx or dy for considering a mouse motion while clicked as a drag.
+	// Minimum dist. from tile center for dragging piece sprite:
+	const int drag = (game->tileSize/2) * (game->tileSize/2);
 	if (IsMouseButtonPressed(0))
 	{
 		// Handle mouse first pressed.
@@ -1644,14 +1645,21 @@ void UpdatePlay(GameContext *game)
 	{
 		if (game->refSelectedSprite)
 		{
-			// Move the current sprite if the mouse is far enough away.
+			// Move the current sprite to the mouse pointer if the sprite has already moved or if
+			// the mouse is far enough away.
 			int x, y;
 			int row = game->refSelectedSprite->data.as_normalChessPiece->row;
 			int col = game->refSelectedSprite->data.as_normalChessPiece->col;
 			NormalChessPosToScreen(row, col, game->boardOffset.x, game->boardOffset.y, game->tileSize,
 					&x, &y);
 			Vector2 originalPos = (Vector2){ x + game->tileSize/2, y + game->tileSize/2 };
-			if (Vector2DistanceSquared(mousePos, originalPos) >= drag)
+			Vector2 spritePos = (Vector2)
+			{
+				game->refSelectedSprite->boundingBox.x + game->refSelectedSprite->boundingBox.width/2,
+				game->refSelectedSprite->boundingBox.y + game->refSelectedSprite->boundingBox.height/2,
+			};
+			if (Vector2DistanceSquared(originalPos, spritePos) > 0
+					|| Vector2DistanceSquared(mousePos, originalPos) >= drag)
 			{
 				SpriteMoveCenter(game->refSelectedSprite, mousePos.x, mousePos.y);
 			}
@@ -1790,10 +1798,18 @@ void DrawPlay(const GameContext *game)
 			DrawRectangle(x, y, tileSize, tileSize, SELECT_COLOR);
 		}
 	}
-	// Draw sprites
+	// Draw sprites except for the selected one.
 	for (int i = 0; i < arrlen(game->arrSprites); i++)
 	{
-		DrawSprite(game, &game->arrSprites[i]);
+		if (!game->refSelectedSprite || game->refSelectedSprite != &game->arrSprites[i])
+		{
+			DrawSprite(game, &game->arrSprites[i]);
+		}
+	}
+	// Draw the selected one now so it is always on top.
+	if (game->refSelectedSprite)
+	{
+		DrawSprite(game, game->refSelectedSprite);
 	}
 	// Debug info
 	if (game->isDebug)
