@@ -13,7 +13,7 @@
 #define abs(x) (((x) > 0)? (x) : -(x))
 #define sign(x) ((x)? (((x) > 0)? 1 : -1) : 0)
 
-// TODO: change piece selection logic. 
+// TODO: fix sprite's reference to a piece getting invalidated after a move.
 // TODO: fix not allowing pinned piece to capture (see TODO below later in file).
 // TODO: implement pawn promotion.
 // TODO: add game turn timers.
@@ -59,6 +59,16 @@ typedef struct NormalChessPiece
 	int row; // position row
 	int col; // position column
 } NormalChessPiece;
+
+typedef struct NormalChessMove 
+{
+	int subjectCol;
+	int subjectRow;
+	int objectCol;
+	int objectRow;
+	int targetCol;
+	int targetRow;
+} NormalChessMove;
 
 // Normal-chess game data
 typedef struct NormalChess
@@ -214,6 +224,22 @@ Vector2 *Vector2ArrFind(Vector2 *arrVectors, Vector2 val)
 	return NULL;
 }
 
+// Remove the Sprite from the reference to arrSprites.
+// Reallocates the arrSprites, which is why we need a reference to it.
+void SpritesArrRemoveSprite(Sprite **refArrSprites, Sprite *removeMe)
+{
+	Sprite *arrSprites = *refArrSprites;
+	for (int i = 0; i < arrlen(arrSprites); i++)
+	{
+		Sprite *s = &arrSprites[i];
+		if (removeMe == s)
+		{
+			arrdelswap(arrSprites, i);
+		}
+	}
+	*refArrSprites = arrSprites;
+}
+
 // Find any sprite at screen coords (x, y)
 Sprite *SpritesArrFindSpriteAt(Sprite *arrSprites, int x, int y)
 {
@@ -239,6 +265,25 @@ Sprite *SpritesArrFindNormalChessSpriteAt(Sprite *arrSprites, int col, int row)
 			NormalChessPiece *p = s->data.as_normalChessPiece;
 			assert(p);
 			if (p->col == col && p->row == row)
+			{
+				return s;
+			}
+		}
+	}
+	return NULL;
+}
+
+// Return the sprite that references the given NormalChessPiece.
+Sprite *SpritesArrFindNormalChessSpriteFor(Sprite *arrSprites, NormalChessPiece *forPiece)
+{
+	for (int i = 0; i < arrlen(arrSprites); i++)
+	{
+		Sprite *s = &arrSprites[i];
+		if (s->data.kind == SK_NORMAL_CHESS_PIECE)
+		{
+			NormalChessPiece *p = s->data.as_normalChessPiece;
+			assert(p);
+			if (p == forPiece)
 			{
 				return s;
 			}
@@ -548,6 +593,24 @@ const NormalChessPiece *PiecesGetAtConst(const NormalChessPiece **arrPieces, int
 	return NULL;
 }
 
+NormalChessPiece *NormalChessMoveGetSubject(NormalChessMove move, NormalChessPiece **arrPieces)
+{
+	if (move.subjectRow < 0 || move.subjectRow > 7 || move.subjectCol < 0 || move.subjectCol > 7)
+	{
+		return NULL;
+	}
+	return PiecesGetAt(arrPieces, move.subjectRow, move.subjectCol);
+}
+
+NormalChessPiece *NormalChessMoveGetObject(NormalChessMove move, NormalChessPiece **arrPieces)
+{
+	if (move.objectRow < 0 || move.objectRow > 7 || move.objectCol < 0 || move.objectCol > 7)
+	{
+		return NULL;
+	}
+	return PiecesGetAt(arrPieces, move.objectRow, move.objectCol);
+}
+
 // Move the piece at start to target
 // (there should not be a piece already at target).
 void PiecesDoMove(NormalChessPiece **arrPieces, int startRow, int startCol,
@@ -843,168 +906,227 @@ void TestNormalChessMovesContains(void)
 	assert(!NormalChessMovesContains(&p1, 7, 3));
 }
 
-// Move the castle and update castling flags in the chess game.
-void NormalChessCastleMove(NormalChess *chess, NormalChessPiece *p, int targetCol)
+NormalChessMove NormalChessCreateCastleMove(NormalChess *chess, NormalChessPiece *p, int targetCol)
 {
 	// Cases: queen's side castle or king's side castle
 	assert(chess);
 	assert(p);
 	assert(targetCol == 6 || targetCol == 2);
-	// Move the rook
-	int rookStartCol, rookTargetCol;
-	if (targetCol > p->col)
+	int rookStartCol;
+	if (targetCol == 6)
 	{
 		// King's side
 		rookStartCol = 7;
-		rookTargetCol = 5;
-	}
-	else if (targetCol < p->col)
-	{
-		// Queen's side
-		rookStartCol = 0;
-		rookTargetCol = 3;
 	}
 	else
 	{
-		assert(0 && "unreachable");
+		// Queen's side
+		rookStartCol = 0;
 	}
-	// Update castling flags
-	switch (p->kind)
+	NormalChessPiece *object = PiecesGetAt(chess->arrPieces, p->row, rookStartCol);
+	return (NormalChessMove)
 	{
-		case WHITE_KING:
-			chess->hasWhiteKingMoved = 1;
-			if (targetCol > p->col)
-			{
-				chess->hasWhiteKingsRookMoved = 1;
-			}
-			else
-			{
-				chess->hasWhiteQueensRookMoved = 1;
-			}
-			break;
-		case BLACK_KING:
-			chess->hasBlackKingMoved = 1;
-			if (targetCol > p->col)
-			{
-				chess->hasBlackKingsRookMoved = 1;
-			}
-			else
-			{
-				chess->hasBlackQueensRookMoved = 1;
-			}
-			break;
-		default:
-			assert(0 && "unreachable");
-	}
-	PiecesDoMove(chess->arrPieces, p->row, rookStartCol, p->row, rookTargetCol);
+		.subjectCol = p->col,
+		.subjectRow = p->row,
+		.objectCol  = object->col,
+		.objectRow  = object->row,
+		.targetCol  = targetCol,
+		.targetRow  = p->row,
+	};
 }
 
-void NormalChessPawnMove(NormalChess *chess, NormalChessPiece *p, int targetRow, int targetCol)
+// Returns: row of captured piece, if any, and returns negative otherwise.
+NormalChessMove NormalChessCreatePawnMove(NormalChess *chess, NormalChessPiece *p, int targetCol,
+		int targetRow)
 {
 	// Cases: capture move, en passant move, or first move is a double move.
 	int dRow = targetRow - p->row;
 	int dCol = targetCol - p->col;
 	if (abs(dRow) == 2)
 	{
-		// First move is double move -> update flag
-		chess->doublePawnCol = p->col;
+		// First move is double move. Cannot be a capture.
+		assert(!PiecesGetAt(chess->arrPieces, targetRow, targetCol));
+		return (NormalChessMove)
+		{
+			.subjectCol = p->col,
+			.subjectRow = p->row,
+			.objectCol  = -1,
+			.objectRow  = -1,
+			.targetCol  = targetCol,
+			.targetRow  = targetRow,
+		};
 	}
-	else if (dCol)
+	else
 	{
-		// En passant capture or normal capture.
+		// En-passant capture or normal capture.
 		// It is en passant if the pawn is moving diagonal to capture and there is no
 		// piece to capture at that target square.
+		assert(dCol);
 		NormalChessPiece *target = PiecesGetAt(chess->arrPieces, targetRow, targetCol);
 		if (!target)
 		{
 			// En passant capture -> remove the other pawn which is next to this one
-			NormalChessPiece *other = PiecesGetAt(chess->arrPieces, p->row, targetCol);
-			assert(other);
-			assert(other->kind == WHITE_PAWN || other->kind == BLACK_PAWN);
-			PiecesRemovePieceAt(chess->arrPieces, p->row, targetCol);
+			target = PiecesGetAt(chess->arrPieces, p->row, targetCol);
 		}
-	}
-	else
-	{
-		assert(0 && "unreachable");
-	}
-}
-
-// Update any flags that result from moving the king or rooks (for castling).
-void NormalChessUpdateFlagsFromMove(NormalChess *chess, NormalChessPiece *p, int startCol)
-{
-	assert(chess);
-	assert(p);
-	switch (p->kind)
-	{
-		case WHITE_PAWN:
-		case BLACK_PAWN:
-			// Reset the doublePawnCol flag if it wasn't set from this move.
-			if (startCol != chess->doublePawnCol)
-			{
-				chess->doublePawnCol = -1;
-			}
-			break;
-		case WHITE_KING:
-			chess->hasWhiteKingMoved = 1;
-			break;
-		case BLACK_KING:
-			chess->hasBlackKingMoved = 1;
-			break;
-		case WHITE_ROOK:
-			if (startCol == 7)
-			{
-				chess->hasWhiteKingsRookMoved = 1;
-			}
-			else if (startCol == 0)
-			{
-				chess->hasWhiteQueensRookMoved = 1;
-			}
-			break;
-		case BLACK_ROOK:
-			if (startCol == 7)
-			{
-				chess->hasBlackKingsRookMoved = 1;
-			}
-			else if (startCol == 0)
-			{
-				chess->hasBlackQueensRookMoved = 1;
-			}
-			break;
-		default:
-			break;
+		assert(target);
+		assert(p);
+		return (NormalChessMove)
+		{
+			.subjectCol = p->col,
+			.subjectRow = p->row,
+			.objectCol  = target->col,
+			.objectRow  = p->row,
+			.targetCol  = targetCol,
+			.targetRow  = targetRow,
+		};
 	}
 }
 
 // Handle normal moves and special moves like castling.
-// Also update the turn counter.
-void NormalChessDoFullMove(NormalChess *chess, int startRow, int startCol,
-		int targetRow, int targetCol)
+NormalChessMove NormalChessCreateMove(NormalChess *chess, int startCol, int startRow, int targetCol, 
+		int targetRow)
 {
 	assert(chess);
 	assert(chess->arrPieces);
 	NormalChessPiece *p = PiecesGetAt(chess->arrPieces, startRow, startCol);
-	// Handle special conditions before the normal move.
+	assert(p);
 	if (NormalChessSpecialMovesContains(chess, p, targetRow, targetCol))
 	{
+		// Special move.
 		switch (p->kind)
 		{
 			case WHITE_KING:
 			case BLACK_KING:
-				NormalChessCastleMove(chess, p, targetCol);
+				// King's special move is castling.
+				return NormalChessCreateCastleMove(chess, p, targetCol);
+			case WHITE_PAWN:
+			case BLACK_PAWN:
+				// Pawn's speical move is a double move or en passant.
+				return NormalChessCreatePawnMove(chess, p, targetCol, targetRow);
+			default:
+				assert(0 && "did not handle all special moves");
+		}
+	}
+	else
+	{
+		// Normal move.
+		assert(p);
+		NormalChessPiece *obj = PiecesGetAt(chess->arrPieces, targetRow, targetCol);
+		return (NormalChessMove)
+		{
+			.subjectCol = p->col,
+			.subjectRow = p->row,
+			.objectCol  = obj? obj->col : -1,
+			.objectRow  = obj? obj->row : -1,
+			.targetCol  = targetCol,
+			.targetRow  = targetRow,
+		};
+	}
+}
+
+void NormalChessDoCastle(NormalChess *chess, NormalChessMove move)
+{
+	NormalChessPiece *p = NormalChessMoveGetSubject(move, chess->arrPieces);
+	assert(p);
+	assert(NormalChessSpecialMovesContains(chess, p, move.targetRow, move.targetCol));
+	assert(0 && "not implemented yet");
+}
+
+void NormalChessDoPawnSpecial(NormalChess *chess, NormalChessMove move)
+{
+	NormalChessPiece *p = NormalChessMoveGetSubject(move, chess->arrPieces);
+	assert(p);
+	assert(NormalChessSpecialMovesContains(chess, p, move.targetRow, move.targetCol));
+	if (move.targetCol != move.subjectCol)
+	{
+		// En Passant -> capture the adjacent pawn.
+		PiecesRemovePieceAt(chess->arrPieces, move.subjectRow, move.targetCol);
+	}
+	else
+	{
+		// Double pawn move -> update the last double pawn column
+		chess->doublePawnCol = move.subjectCol;
+	}
+}
+
+// Update any flags that result from moving the king or rooks (for castling).
+void NormalChessUpdateMovementFlags(NormalChess *chess, NormalChessMove move)
+{
+	NormalChessPiece *moveSubject = NormalChessMoveGetSubject(move, chess->arrPieces);
+	assert(moveSubject);
+	switch (moveSubject->kind)
+	{
+		case WHITE_KING:
+			// King moved.
+			chess->hasWhiteKingMoved = 1;
+			break;
+		case BLACK_KING:
+			// King moved.
+			chess->hasBlackKingMoved = 1;
+			break;
+		case WHITE_ROOK:
+			// Rook moved.
+			if (move.targetCol > move.subjectCol)
+			{
+				// King's side
+				chess->hasWhiteKingsRookMoved = 1;
+			}
+			else
+			{
+				// Queen's side
+				chess->hasWhiteQueensRookMoved = 1;
+			}
+			break;
+		case BLACK_ROOK:
+			// Rook moved.
+			if (move.targetCol > move.subjectCol)
+			{
+				// King's side
+				chess->hasBlackKingsRookMoved = 1;
+			}
+			else
+			{
+				// Queen's side
+				chess->hasBlackQueensRookMoved = 1;
+			}
+			break;
+		default:
+			// No flags to update for other pieces.
+			break;
+	}
+}
+
+void NormalChessDoMove(NormalChess *chess, NormalChessMove move)
+{
+	assert(chess);
+	assert(move.subjectCol >= 0 && move.subjectCol <= 7);
+	assert(move.subjectRow >= 0 && move.subjectRow <= 7);
+	NormalChessPiece *moveSubject = NormalChessMoveGetSubject(move, chess->arrPieces);
+	assert(moveSubject);
+	if (NormalChessSpecialMovesContains(chess, moveSubject, move.targetRow, move.targetCol))
+	{
+		// Special move.
+		switch (moveSubject->kind)
+		{
+			case WHITE_KING:
+			case BLACK_KING:
+				// King's castling -> move the rook too.
+				NormalChessDoCastle(chess, move);
 				break;
 			case WHITE_PAWN:
 			case BLACK_PAWN:
-				NormalChessPawnMove(chess, p, targetRow, targetCol);
+				// En passant requires capturing the other pawn that was next to the subject.
+				// Pawn's special move is a double move or en passant.
+				NormalChessDoPawnSpecial(chess, move);
 				break;
 			default:
 				assert(0 && "did not handle all special moves");
 		}
 	}
-	// Do the normal piece movement
-	PiecesDoCapture(chess->arrPieces, startRow, startCol, targetRow, targetCol);
-	// Update any flags that result from moving the king or rooks (for castling).
-	NormalChessUpdateFlagsFromMove(chess, p, startCol);
+	NormalChessUpdateMovementFlags(chess, move);
+	// The subject always moves/captures to the target spot.
+	PiecesDoCapture(chess->arrPieces, moveSubject->row, moveSubject->col, move.targetRow, move.targetCol);
+	// Next turn!
 	chess->turn++;
 }
 
@@ -1354,15 +1476,60 @@ void UpdateMoveSquares(GameContext *game)
 	}
 }
 
+NormalChessPiece *NormalChessMoveGetCapturedPiece(NormalChess *chess, NormalChessMove move)
+{
+	NormalChessPiece *moveSubject = NormalChessMoveGetSubject(move, chess->arrPieces);
+	NormalChessPiece *moveObject = NormalChessMoveGetObject(move, chess->arrPieces);
+	if (NormalChessSpecialMovesContains(chess, moveSubject, move.targetRow, move.targetCol))
+	{
+		// This move is special, so see what kind it is.
+		assert(moveSubject);
+		switch (moveSubject->kind)
+		{
+			case WHITE_KING:
+			case BLACK_KING:
+				// King castling
+				return NULL;
+			case WHITE_PAWN:
+			case BLACK_PAWN:
+				// En passant or double move
+				return moveObject;
+			default:
+				assert(0 && "did not handle a special move case");
+		}
+	}
+	else
+	{
+		return moveObject;
+	}
+}
+
+// Move the selected piece to the target.
 void GameDoMoveNormalChess(GameContext *game, int targetCol, int targetRow)
 {
+	assert(targetRow >= 0 && targetRow <= 7);
+	assert(targetCol >= 0 && targetCol <= 7);
 	assert(game);
 	assert(game->normalChess);
 	assert(game->refSelectedSprite);
+	// Make sure that there is a piece to move.
 	NormalChessPiece *p = GameGetValidSelectedPiece(game);
 	assert(p);
-	NormalChessDoFullMove(game->normalChess, p->row, p->col, targetRow, targetCol);
+	// Create the chess move that the user indicated.
+	NormalChessMove theMove = NormalChessCreateMove(game->normalChess, p->col, p->row, targetCol,
+			targetRow);
+	// Remove the target sprite if it will be captured.
+	NormalChessPiece *target = NormalChessMoveGetCapturedPiece(game->normalChess, theMove);
+	if (target)
+	{
+		Sprite *targetSprite = SpritesArrFindNormalChessSpriteFor(game->arrSprites, target);
+		assert(targetSprite);
+		SpritesArrRemoveSprite(&game->arrSprites, targetSprite);
+	}
+	// Do chess game move and sprite move.
+	NormalChessDoMove(game->normalChess, theMove);
 	SpriteMoveToNormalChessPiece(game->refSelectedSprite, game);
+	// De-select the selected sprite and remove highlights.
 	game->refSelectedSprite = NULL;
 	UpdateMoveSquares(game);
 }
