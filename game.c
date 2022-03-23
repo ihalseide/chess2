@@ -6,7 +6,7 @@
 #define STB_DS_IMPLEMENTATION
 #include "stb_ds.h"
 
-#define TILE_SIZE 16
+#define TEXTURE_TILE_SIZE 16
 #define HI_COLOR (Color){ GOLD.r, GOLD.g, GOLD.b, 128 }
 #define SELECT_COLOR (Color){ GREEN.r, GREEN.g, GREEN.b, 128 }
 
@@ -104,7 +104,6 @@ typedef struct GameContext
 	int tileSize;
 	Vector2 boardOffset;  // pixels
 	Vector2 clickStart;  // pixels
-	NormalChessPiece *selectedPiece; // non-owned reference to selected piece in NormalChess
 	Vector2 *arrDraggedPieceMoves;  // board coordinates (col, row)
 	int isDebug;  // higher number generally means more info
 	Sprite *arrSprites; // dynamic array of sprites
@@ -161,6 +160,15 @@ int Vector2ArrFind(Vector2 *arrVectors, Vector2 val)
 		}
 	}
 	return -1;
+}
+
+// Move a sprite so that it is centered at the given position.
+void SpriteMoveCenter(Sprite *s, int centerX, int centerY)
+{
+	int x = centerX - (s->boundingBox.width / 2);
+	int y = centerY - (s->boundingBox.height / 2);
+	s->boundingBox.x = x;
+	s->boundingBox.y = y;
 }
 
 void ClearMoveSquares(GameContext *game)
@@ -1082,9 +1090,10 @@ Sprite *SpritesArrCreateNormalChess(GameContext *game)
 		new.data = (SpriteData){ .kind = SK_NORMAL_CHESS_PIECE, .as_normalChessPiece = piece };
 		int x, y;
 		NormalChessPosToScreen(piece->row, piece->col, x0, y0, tileSize, &x, &y);
-		new.boundingBox = (Rectangle){ x, y, 16, 16};
+		new.boundingBox = (Rectangle){ 0, 0, 16, 16};
 		new.refTexture = &(game->texPieces);
 		new.textureRect = NormalChessKindToTextureRect(piece->kind);
+		SpriteMoveCenter(&new, x + tileSize/2, y + tileSize/2);
 		arrpush(arrSprites, new);
 	}
 	return arrSprites;
@@ -1116,7 +1125,6 @@ void GameCleanupState(GameContext *game)
 				game->arrDraggedPieceMoves = NULL;
 			}
 			// Current piece is now invalid
-			game->selectedPiece = NULL;
 			break;
 		case GS_MAIN_MENU:
 			break;
@@ -1194,6 +1202,52 @@ void GameSwitchState(GameContext *game, GameState newState)
 	GameEnterState(game, previous);
 }
 
+Rectangle GameGetBoardRect(const GameContext *game)
+{
+	const int boardWidth = 8;
+	const int boardHeight = 8;
+	return (Rectangle)
+	{
+		.x = game->boardOffset.x,
+		.y = game->boardOffset.y,
+		.width = boardWidth * game->tileSize,
+		.height = boardHeight * game->tileSize,
+	};
+}
+
+int GameIsPointOnBoard(const GameContext *game, Vector2 screenPos)
+{
+	return CheckCollisionPointRec(screenPos, GameGetBoardRect(game));
+}
+
+NormalChessPiece *GameGetPieceAt(GameContext *game, Vector2 screenPos)
+{
+	int x0 = game->boardOffset.x;
+	int y0 = game->boardOffset.y;
+	int tileSize = game->tileSize;
+	if (!GameIsPointOnBoard(game, screenPos))
+	{
+		return 0;
+	}
+	int row, col;
+	ScreenToNormalChessPos(screenPos.x, screenPos.y, x0, y0, tileSize, &row, &col);
+	return PiecesGetAt(game->normalChess->arrPieces, row, col);
+}
+
+NormalChessPiece *GameGetValidSelectedPiece(GameContext *game)
+{
+	assert(game);
+	NormalChessPiece *p = GameGetPieceAt(game, game->clickStart);
+	if (p && PieceKingOf(p) == NormalChessCurrentKing(game->normalChess))
+	{
+		return p;
+	}
+	else
+	{
+		return NULL;
+	}
+}
+
 // NOTE: this automatically frees the dynamic array (arrDraggedPieceMoves)
 // if it is already pointing to something.
 void UpdateMoveSquares(GameContext *game)
@@ -1203,7 +1257,8 @@ void UpdateMoveSquares(GameContext *game)
 	{
 		ClearMoveSquares(game);
 	}
-	NormalChessPiece *p = game->selectedPiece;
+	assert(game->arrDraggedPieceMoves == NULL);
+	NormalChessPiece *p = GameGetValidSelectedPiece(game);
 	if (p)
 	{
 		Vector2 *newArrMoves = NormalChessCreatePieceMoveList(game->normalChess, p);
@@ -1213,52 +1268,21 @@ void UpdateMoveSquares(GameContext *game)
 
 void UpdatePlay(GameContext *game)
 {
-	int x0 = game->boardOffset.x;
-	int y0 = game->boardOffset.y;
-	int tileSize = game->tileSize;
-	Rectangle boardRect = (Rectangle){ x0, y0, 8 * tileSize, 8 * tileSize };
 	Vector2 mousePos = GetMousePosition();
-
 	if (IsMouseButtonPressed(0))
 	{
 		game->clickStart = mousePos;
-		if (CheckCollisionPointRec(mousePos, boardRect))
-		{
-			// Clicked within the board.
-			int row, col;
-			ScreenToNormalChessPos(mousePos.x, mousePos.y, x0, y0, tileSize, &row, &col);
-			Vector2 pos = (Vector2){ col, row };
-			NormalChessPiece *clickedPiece = PiecesGetAt(game->normalChess->arrPieces, row, col);
-			if (clickedPiece && PieceKingOf(clickedPiece) == NormalChessCurrentKing(game->normalChess))
-			{
-				// Clicked on a valid piece.
-				game->selectedPiece = clickedPiece;
-			}
-			else if (game->selectedPiece && !clickedPiece
-					&& Vector2ArrFind(game->arrDraggedPieceMoves, pos))
-			{
-				// Clicked on one of the selectedPiece's move squares.
-				// Do nothing.
-			}
-			else
-			{
-				// Clicked on an invalid piece/square.
-				game->selectedPiece = NULL;
-			}
-		}
-		// Always do this when a mouse is pressed
 		UpdateMoveSquares(game);
 	}
 	else if (IsMouseButtonReleased(0))
 	{
-		if (CheckCollisionPointRec(mousePos, boardRect) && game->selectedPiece)
+		if (GameIsPointOnBoard(game, mousePos))
 		{
-			int clickStartRow, clickStartCol;
-			ScreenToNormalChessPos(game->clickStart.x, game->clickStart.y, x0, y0, tileSize,
-					&clickStartRow, &clickStartCol);
-			int clickEndRow, clickEndCol;
-			ScreenToNormalChessPos(mousePos.x, mousePos.y, x0, y0, tileSize, &clickEndRow, &clickEndCol);
-			UpdateMoveSquares(game);
+			//
+		}
+		else
+		{
+			//
 		}
 	}
 }
@@ -1345,7 +1369,7 @@ void DrawTextureRecCentered(Texture2D tex, Rectangle slice, Rectangle bounds)
 	DrawTextureRec(tex, slice, (Vector2){ x, y }, WHITE);
 }
 
-void SpriteDraw(const GameContext *game, const Sprite *s)
+void DrawSprite(const GameContext *game, const Sprite *s)
 {
 	assert(game);
 	assert(s);
@@ -1378,7 +1402,7 @@ void DrawPlay(const GameContext *game)
 	// Draw sprites
 	for (int i = 0; i < arrlen(game->arrSprites); i++)
 	{
-		SpriteDraw(game, &game->arrSprites[i]);
+		DrawSprite(game, &game->arrSprites[i]);
 	}
 	// Draw move highlight squares.
 	for (int i = 0; i < arrlen(game->arrDraggedPieceMoves); i++)
@@ -1389,12 +1413,15 @@ void DrawPlay(const GameContext *game)
 		DrawRectangle(x, y, tileSize, tileSize, HI_COLOR);
 	}
 	// Draw selected piece highlight square.
-	if (game->selectedPiece)
+	if (GameIsPointOnBoard(game, game->clickStart))
 	{
-		int x, y;
-		NormalChessPosToScreen(game->selectedPiece->row, game->selectedPiece->col, x0, y0, tileSize,
-				&x, &y);
-		DrawRectangle(x, y, tileSize, tileSize, SELECT_COLOR);
+		NormalChessPiece *p = GameGetValidSelectedPiece(game);
+		if (p)
+		{
+			int x, y;
+			NormalChessPosToScreen(p->row, p->col, x0, y0, tileSize, &x, &y);
+			DrawRectangle(x, y, tileSize, tileSize, SELECT_COLOR);
+		}
 	}
 	// Debug info
 	if (game->isDebug)
@@ -1402,7 +1429,8 @@ void DrawPlay(const GameContext *game)
 		// selectedPiece
 		if (game->isDebug >= 3)
 		{
-			DrawText(TextFormat("selectedPiece: %p", game->selectedPiece), 190, 20, 20, WHITE);
+			DrawText(TextFormat("selectedPiece: %p", GameGetValidSelectedPiece(game)),
+					190, 20, 20, WHITE);
 		}
 		// draw list of game pieces
 		if (game->isDebug >= 3)
@@ -1498,7 +1526,6 @@ void GameCleanup(GameContext *game)
 {
 	GameCleanupState(game);
 	// Make sure every pointer has been dealt with
-	assert(game->selectedPiece == NULL);
 	assert(game->normalChess == NULL);
 	assert(game->arrDraggedPieceMoves == NULL);
 }
@@ -1522,10 +1549,9 @@ int main(void) {
 		.ticks                = 0,
 		.clickStart           = (Vector2) { -1, -1 },
 		.normalChess          = NULL,
-		.boardOffset          = (Vector2) { 50, 100 },
-		.tileSize             = TILE_SIZE * 2,
+		.boardOffset          = (Vector2) { 160, 110 },
+		.tileSize             = TEXTURE_TILE_SIZE * 2,
 		.arrDraggedPieceMoves = NULL,
-		.selectedPiece        = NULL,
 		.texPieces            = LoadTexture("gfx/pieces.png"),
 		.texBoard             = LoadTexture("gfx/board.png"),
 		.texGUI               = LoadTexture("gfx/gui.png"),
