@@ -13,8 +13,9 @@
 #define abs(x) (((x) > 0)? (x) : -(x))
 #define sign(x) ((x)? (((x) > 0)? 1 : -1) : 0)
 
-// TODO: add game turn timers.
 // TODO: add gameplay buttons to quit, resign, restart, etc..
+// TODO: add game turn timers.
+// TODO: add sound effects
 // TODO: add particles.
 // TODO: add music.
 
@@ -49,6 +50,7 @@ typedef enum NormalChessKind
 typedef enum SpriteKind
 {
 	SK_NONE,
+	SK_GENERIC_BUTTON,
 	SK_PROMOTE_BUTTON,
 	SK_NORMAL_CHESS_PIECE,
 } SpriteKind;
@@ -91,6 +93,14 @@ typedef struct PiecePromoteButton
 	int isHover;
 } PiecePromoteButton;
 
+typedef struct GenericButton
+{
+	int isPressed;
+	int isClick;
+	int isHover;
+	const char *text;
+} GenericButton;
+
 // Tagged union for the data of different kinds of sprites.
 // Note: don't give a sprite any "owned" pointers to memory, because it might
 // not be free'd when the sprite is.
@@ -100,6 +110,7 @@ typedef struct SpriteData
 	union {
 		NormalChessPiece *as_normalChessPiece; // for normal chess game pieces.
 		PiecePromoteButton as_promoteButton;
+		GenericButton as_genericButton;
 	};
 } SpriteData;
 
@@ -457,44 +468,44 @@ NormalChess *NormalChessInit(void)
 	for (int col = 0; col < 8; col++)
 	{
 		p = NormalChessPieceAlloc(WHITE_PAWN, 1, col);
-		arrpush(pieces, p);
+		arrput(pieces, p);
 		p = NormalChessPieceAlloc(BLACK_PAWN, 6, col);
-		arrpush(pieces, p);
+		arrput(pieces, p);
 	}
 	// White pieces
 	p = NormalChessPieceAlloc(WHITE_ROOK, 0, 0);
-	arrpush(pieces, p);
+	arrput(pieces, p);
 	p = NormalChessPieceAlloc(WHITE_KNIGHT, 0, 1);
-	arrpush(pieces, p);
+	arrput(pieces, p);
 	p = NormalChessPieceAlloc(WHITE_BISHOP, 0, 2);
-	arrpush(pieces, p);
+	arrput(pieces, p);
 	p = NormalChessPieceAlloc(WHITE_QUEEN, 0, 3);
-	arrpush(pieces, p);
+	arrput(pieces, p);
 	p = NormalChessPieceAlloc(WHITE_KING, 0, 4);
-	arrpush(pieces, p);
+	arrput(pieces, p);
 	p = NormalChessPieceAlloc(WHITE_BISHOP, 0, 5);
-	arrpush(pieces, p);
+	arrput(pieces, p);
 	p = NormalChessPieceAlloc(WHITE_KNIGHT, 0, 6);
-	arrpush(pieces, p);
+	arrput(pieces, p);
 	p = NormalChessPieceAlloc(WHITE_ROOK, 0, 7);
-	arrpush(pieces, p);
+	arrput(pieces, p);
 	// Black pieces
 	p = NormalChessPieceAlloc(BLACK_ROOK, 7, 0);
-	arrpush(pieces, p);
+	arrput(pieces, p);
 	p = NormalChessPieceAlloc(BLACK_KNIGHT, 7, 1);
-	arrpush(pieces, p);
+	arrput(pieces, p);
 	p = NormalChessPieceAlloc(BLACK_BISHOP, 7, 2);
-	arrpush(pieces, p);
+	arrput(pieces, p);
 	p = NormalChessPieceAlloc(BLACK_QUEEN, 7, 3);
-	arrpush(pieces, p);
+	arrput(pieces, p);
 	p = NormalChessPieceAlloc(BLACK_KING, 7, 4);
-	arrpush(pieces, p);
+	arrput(pieces, p);
 	p = NormalChessPieceAlloc(BLACK_BISHOP, 7, 5);
-	arrpush(pieces, p);
+	arrput(pieces, p);
 	p = NormalChessPieceAlloc(BLACK_KNIGHT, 7, 6);
-	arrpush(pieces, p);
+	arrput(pieces, p);
 	p = NormalChessPieceAlloc(BLACK_ROOK, 7, 7);
-	arrpush(pieces, p);
+	arrput(pieces, p);
 	return NormalChessAlloc(0, pieces);
 }
 
@@ -1355,7 +1366,7 @@ Vector2 *NormalChessCreatePieceMoveList(const NormalChess *c, NormalChessPiece *
 			if (NormalChessAllMovesContains(c, p, row, col))
 			{
 				Vector2 colRow = (Vector2){ col, row };
-				arrpush(result, colRow);
+				arrput(result, colRow);
 			}
 		}
 	}
@@ -1448,7 +1459,7 @@ Sprite *SpritesArrCreateNormalChess(GameContext *game)
 		new.refTexture = &(game->texPieces);
 		new.textureRect = NormalChessKindToTextureRect(piece->kind);
 		SpriteMoveToNormalChessPiece(&new, game);
-		arrpush(arrSprites, new);
+		arrput(arrSprites, new);
 	}
 	return arrSprites;
 }
@@ -1622,7 +1633,7 @@ void GameEnterStatePlayPromote(GameContext *game, GameState previous)
 				.height = buttonHeight,
 			},
 		};
-		arrpush(game->arrSprites, button);
+		arrput(game->arrSprites, button);
 	}
 	// Use refSelectedSprite to refer to the pawn to promote.
 	NormalChessPiece *promoteP = NormalChessGetPawnPromotion(game->normalChess);
@@ -1650,6 +1661,21 @@ void GameEnterStatePlay(GameContext *game, GameState previous)
 		// Initialize game sprites from normal chess pieces.
 		assert(!game->arrSprites);
 		game->arrSprites = SpritesArrCreateNormalChess(game);
+		// Initialize the button sprites.
+		SpriteData defaultData = (SpriteData)
+		{
+			.kind = SK_GENERIC_BUTTON,
+			.as_genericButton = (GenericButton) { 0, 0, 0, .text = NULL, },
+		};
+		Sprite menuButton = (Sprite)
+		{
+			.refTexture = &game->texGUI,
+			.textureRect = (Rectangle){ 0, 0, 16, 16 },
+			.boundingBox = (Rectangle){ 10, 10, 70, 35 },
+			.data = defaultData,
+		};
+		menuButton.data.as_genericButton.text = "Menu";
+		arrput(game->arrSprites, menuButton);
 	}
 }
 
@@ -1853,11 +1879,54 @@ void GameDoMoveNormalChess(GameContext *game, int targetCol, int targetRow)
 	UpdateMoveSquares(game);
 }
 
+void UpdatePlayButtons(GameContext *game)
+{
+	Vector2 mousePos = GetMousePosition();
+	// Check each button in the menu.
+	int didHover = 0; // can only hover 1 button
+	int didClick = 0; // can only click 1 button
+	for (int i = 0; i < arrlen(game->arrSprites); i++)
+	{
+		Sprite *s = &game->arrSprites[i];
+		if (s->data.kind != SK_GENERIC_BUTTON)
+		{
+			continue;
+		}
+		// Update hover fully and when a button starts to be clicked.
+		s->data.as_genericButton.isHover = 0;
+		s->data.as_genericButton.isClick = 0;
+		if (CheckCollisionPointRec(mousePos, s->boundingBox))
+		{
+			if (IsMouseButtonReleased(0))
+			{
+				// The current button has been clicked on.
+				const char *buttonText = s->data.as_genericButton.text;
+				if (TextIsEqual(buttonText, "Menu"))
+				{
+					GameSwitchState(game, GS_MAIN_MENU);
+					break;
+				}
+			}
+			else if (!didHover)
+			{
+				s->data.as_promoteButton.isHover = 1;
+				didHover = 1;
+				if (!didClick && IsMouseButtonDown(0))
+				{
+					s->data.as_promoteButton.isClick = 1;
+					didClick = 1;
+				}
+			}
+		}
+	}
+}
+
 void UpdatePlay(GameContext *game)
 {
 	Vector2 mousePos = GetMousePosition();
 	// Minimum dist. from tile center for dragging piece sprite:
 	const int drag = (game->tileSize/2) * (game->tileSize/2);
+	UpdatePlayButtons(game);
 	if (IsMouseButtonPressed(0))
 	{
 		// Handle mouse first pressed.
@@ -2078,6 +2147,16 @@ void DrawTextureRecCentered(Texture2D tex, Rectangle slice, Rectangle bounds)
 	DrawTextureRec(tex, slice, (Vector2){ x, y }, WHITE);
 }
 
+void DrawTextCentered(const char *text, int centerX, int centerY, int fontSize, Color tint)
+{
+	Font font = GetFontDefault();
+	int spacing = 0;
+	Vector2 textSize = MeasureTextEx(font, text, fontSize, spacing);
+	int x = centerX - textSize.x / 2;
+	int y = centerY - textSize.y / 2;
+	DrawText(text, x, y, fontSize, tint);
+}
+
 void DrawSprite(const GameContext *game, const Sprite *s)
 {
 	assert(game);
@@ -2115,6 +2194,32 @@ void DrawSprite(const GameContext *game, const Sprite *s)
 				DrawTextureRecCentered(*s->refTexture,
 						NormalChessKindToTextureRect(s->data.as_promoteButton.pieceKind),
 						s->boundingBox);
+				break;
+			}
+		case SK_GENERIC_BUTTON:
+			{
+				const Color fillColor = LIGHTGRAY;
+				const Color hoverColor = RAYWHITE;
+				Color outlineColor = GRAY;
+				Rectangle shrunk = (Rectangle)
+				{
+					.x = s->boundingBox.x + 1,
+					.y = s->boundingBox.y + 1,
+					.width = s->boundingBox.width - 2,
+					.height = s->boundingBox.height - 2,
+				};
+				if (s->data.as_genericButton.isClick)
+				{
+					outlineColor = fillColor;
+				}
+				else if (s->data.as_genericButton.isHover)
+				{
+					outlineColor = hoverColor;
+				}
+				DrawRectangleRec(shrunk, fillColor);
+				DrawTextCentered(s->data.as_genericButton.text, shrunk.x + shrunk.width/2,
+						shrunk.y + shrunk.height/2, 20, outlineColor);
+				DrawRectangleLinesEx(shrunk, 2, outlineColor);
 				break;
 			}
 		case SK_NONE:
@@ -2167,6 +2272,15 @@ void DrawPlay(const GameContext *game)
 			continue;
 		}
 		if (!game->refSelectedSprite || game->refSelectedSprite != s)
+		{
+			DrawSprite(game, s);
+		}
+	}
+	// Draw buttons / menu / GUI
+	for (int i = 0; i < arrlen(game->arrSprites); i++)
+	{
+		Sprite *s = &game->arrSprites[i];
+		if (s->data.kind == SK_GENERIC_BUTTON)
 		{
 			DrawSprite(game, s);
 		}
