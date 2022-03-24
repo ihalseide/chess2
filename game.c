@@ -1674,7 +1674,7 @@ void GameEnterStatePlay(GameContext *game, GameState previous)
 			.boundingBox = (Rectangle){ 10, 10, 70, 35 },
 			.data = defaultData,
 		};
-		menuButton.data.as_genericButton.text = "Menu";
+		menuButton.data.as_genericButton.text = "Quit";
 		arrput(game->arrSprites, menuButton);
 	}
 }
@@ -1696,7 +1696,7 @@ void GameEnterStateGameOver(GameContext *game, GameState previous)
 // Meant to be called by GameEnterState.
 void GameEnterStateMainMenu(GameContext *game, GameState previous)
 {
-	assert(previous == GS_NONE && "TODO: handle switching to main menu from other states.");
+	// Nothing to do.
 }
 
 // What to do when switch FROM previous state TO current state.
@@ -1901,7 +1901,7 @@ void UpdatePlayButtons(GameContext *game)
 			{
 				// The current button has been clicked on.
 				const char *buttonText = s->data.as_genericButton.text;
-				if (TextIsEqual(buttonText, "Menu"))
+				if (TextIsEqual(buttonText, "Quit"))
 				{
 					GameSwitchState(game, GS_MAIN_MENU);
 					break;
@@ -2077,7 +2077,11 @@ void UpdateGameOver(GameContext *game)
 
 void UpdateMainMenu(GameContext *game)
 {
-	assert(0 && "not implemented yet");
+	// Nothing to do.
+	if (GetKeyPressed())
+	{
+		GameSwitchState(game, GS_PLAY);
+	}
 }
 
 void UpdatePlayAnimate(GameContext *game)
@@ -2346,10 +2350,16 @@ void DrawGameOver(const GameContext *game)
 
 void DrawMainMenu(const GameContext *game)
 {
-	DrawText("Menu", 20, 50, 16, SKYBLUE);
+	ClearBackground(RAYWHITE);
+	// Draw menu title.
+	Texture2D texture = game->texGUI;
 	Rectangle slice = (Rectangle){ 0, 0, 160, 64 };
-	Vector2 pos = (Vector2){ 250, 200 };
-	DrawTextureRec(game->texPieces, slice, pos, WHITE);
+	Rectangle dest = (Rectangle){ 150, 80, slice.width*2, slice.height*2 };
+	Vector2 origin = (Vector2){ 0, 0 };
+	float rotation = 0;
+	float scale = 2;
+	Color tint = WHITE;
+	DrawTexturePro(texture, slice, dest, origin, rotation, tint);
 }
 
 void DrawDebug(const GameContext *game)
