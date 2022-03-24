@@ -22,12 +22,14 @@
 typedef enum GameState
 {
 	GS_NONE,
-	GS_PLAY,
-	GS_PLAY_ANIMATE,
-	GS_PLAY_PROMOTE,
-	GS_GAME_OVER,
+	GS_PLAY,         // This state has a NormalChess game going on still.
+	GS_PLAY_ANIMATE, // This state has a NormalChess game going on still.
+	GS_PLAY_PROMOTE, // This state has a NormalChess game going on still.
+	GS_GAME_OVER,    // This state has a NormalChess game going on still.
 	GS_MAIN_MENU,
 } GameState;
+#define _GS_COUNT (GS_MAIN_MENU + 1)
+_Static_assert(_GS_COUNT == 6, "exhaustive handling of all GameState's");
 
 typedef enum NormalChessKind
 {
@@ -48,23 +50,24 @@ typedef enum NormalChessKind
 typedef enum SpriteKind
 {
 	SK_NONE,
+	SK_PROMOTE_BUTTON,
 	SK_NORMAL_CHESS_PIECE,
 } SpriteKind;
 
 typedef struct NormalChessPiece
 {
 	NormalChessKind kind;
-	int row; // position row
 	int col; // position column
+	int row; // position row
 } NormalChessPiece;
 
 typedef struct NormalChessMove 
 {
-	int subjectCol;
+	int subjectCol; // The subject is the piece moving or capturing. The subject moves from this location.
 	int subjectRow;
-	int objectCol;
+	int objectCol;  // The object is the other piece which is being captured (or is the rook when castling)
 	int objectRow;
-	int targetCol;
+	int targetCol;  // The square the subject piece is moving to.
 	int targetRow;
 } NormalChessMove;
 
@@ -87,7 +90,8 @@ typedef struct SpriteData
 {
 	SpriteKind kind;
 	union {
-		NormalChessPiece *as_normalChessPiece;
+		NormalChessPiece *as_normalChessPiece; // for normal chess game pieces.
+		NormalChessKind as_promoteButton; // for buttons to click when promoting a pawn
 	};
 } SpriteData;
 
@@ -104,14 +108,15 @@ typedef struct Sprite
 // function GameSwitchState(...) to switch states.
 typedef struct GameContext
 {
-	int isDebug;  // higher number generally means more info
-	int ticks;
-	int tileSize;
-	Vector2 boardOffset;  // pixels
-	GameState state;  // see note above (9 lines above this one)
 	Texture2D texPieces;  // spritesheet textures for pieces
 	Texture2D texBoard;  // spritesheet textures for board and background
 	Texture2D texGUI;  // spritesheet textures for user interface specific stuff
+	Vector2 boardOffset;  // pixels
+	Rectangle promotionMenuRect;
+	int isDebug;  // higher number generally means more info
+	int ticks;
+	int tileSize;
+	GameState state;  // see note above (12 lines above this one)
 	NormalChess *normalChess;
 	Vector2 *arrDraggedPieceMoves;  // board coordinates (col, row)
 	Sprite *arrSprites; // dynamic array of sprites
@@ -140,10 +145,12 @@ float Vector2DistanceSquared(Vector2 a, Vector2 b)
 
 const char *GameStateToStr(GameState s)
 {
+	_Static_assert(_GS_COUNT == 6, "exhaustive handling of all GameState's");
 	switch (s)
 	{
 		case GS_NONE:         return "GS_NONE";
 		case GS_PLAY:         return "GS_PLAY";
+		case GS_PLAY_ANIMATE: return "GS_PLAY_ANIMATE";
 		case GS_PLAY_PROMOTE: return "GS_PLAY_PROMOTE";
 		case GS_GAME_OVER:    return "GS_GAME_OVER";
 		case GS_MAIN_MENU:    return "GS_MAIN_MENU";
@@ -603,6 +610,24 @@ int PiecesCountAtConst(const NormalChessPiece **arrPieces, int row, int col)
 		}
 	}
 	return count;
+}
+
+NormalChessPiece *NormalChessGetPawnPromotion(NormalChess *chess)
+{
+	for (int i = 0; i < arrlen(chess->arrPieces); i++)
+	{
+		NormalChessPiece *p = chess->arrPieces[i];
+		if (NormalChessCanUsePiece(chess, p))
+		{
+			// White pawn must reach row 7.
+			// Black pawn must reach row 0.
+			if ((p->kind == WHITE_PAWN && p->row == 7) || (p->kind == BLACK_PAWN && p->row == 0))
+			{
+				return p;
+			}
+		}
+	}
+	return NULL;
 }
 
 NormalChessPiece *NormalChessMoveGetSubject(NormalChessMove move, NormalChessPiece **arrPieces)
@@ -1183,8 +1208,7 @@ void NormalChessDoMove(NormalChess *chess, NormalChessMove move)
 	NormalChessUpdateMovementFlags(chess, move);
 	// The subject always moves/captures to the target spot.
 	PiecesDoCapture(chess->arrPieces, moveSubject->row, moveSubject->col, move.targetRow, move.targetCol);
-	// Next turn!
-	chess->turn++;
+	// Do not increment to next turn yet
 }
 
 // See if a piece is prevented from moving to a target square because it is pinned.
@@ -1370,9 +1394,11 @@ Sprite *SpritesArrCreateNormalChess(GameContext *game)
 void GameCleanupState(GameContext *game)
 {
 	assert(game);
+	_Static_assert(_GS_COUNT == 6, "exhaustive handling of all GameState's");
 	switch (game->state)
 	{
 		case GS_PLAY:
+		case GS_PLAY_ANIMATE:
 		case GS_PLAY_PROMOTE:
 		case GS_GAME_OVER:
 			// Free normal chess game
@@ -1395,68 +1421,194 @@ void GameCleanupState(GameContext *game)
 			break;
 		case GS_MAIN_MENU:
 			break;
-		default:
+		case GS_NONE:
 			assert(0 && "unhandled state");
 	}
+}
+
+// Meant to be called by GameLeaveState.
+void GameLeaveStatePlay(GameContext *game, GameState next)
+{
+	if (next != GS_PLAY_PROMOTE && next != GS_GAME_OVER)
+	{
+		GameCleanupState(game);
+	}
+}
+
+// Meant to be called by GameLeaveState.
+void GameLeaveStatePlayPromote(GameContext *game, GameState next)
+{
+	if (next != GS_PLAY)
+	{
+		GameCleanupState(game);
+	}
+}
+
+// Meant to be called by GameLeaveState.
+void GameLeaveStatePlayAnimate(GameContext *game, GameState next)
+{
+	if (next != GS_PLAY)
+	{
+		GameCleanupState(game);
+	}
+}
+
+// Meant to be called by GameLeaveState.
+void GameLeaveStateGameOver(GameContext *game, GameState next)
+{
+	GameCleanupState(game);
+}
+
+// Meant to be called by GameLeaveState.
+void GameLeaveStateMainMenu(GameContext *game, GameState next)
+{
+	GameCleanupState(game);
 }
 
 // What to do when switching FROM current state TO next state.
 void GameLeaveState(GameContext *game, GameState next)
 {
 	assert(game);
+	_Static_assert(_GS_COUNT == 6, "exhaustive handling of all GameState's");
 	switch (game->state)
 	{
 		case GS_PLAY:
-			if (!(next == GS_PLAY_PROMOTE || next == GS_GAME_OVER))
-			{
-				GameCleanupState(game);
-			}
+			GameLeaveStatePlay(game, next);
+			break;
+		case GS_PLAY_ANIMATE:
+			GameLeaveStatePlayAnimate(game, next);
 			break;
 		case GS_PLAY_PROMOTE:
-			if (next != GS_PLAY)
-			{
-				GameCleanupState(game);
-			}
+			GameLeaveStatePlayPromote(game, next);
 			break;
 		case GS_GAME_OVER:
-			GameCleanupState(game);
+			GameLeaveStateGameOver(game, next);
 			break;
 		case GS_MAIN_MENU:
-			GameCleanupState(game);
+			GameLeaveStateMainMenu(game, next);
 			break;
-		default:
+		case GS_NONE:
 			assert(0 && "unhandled state");
 	}
+}
+
+// Enter play promote state.
+// Meant to be called by GameEnterState.
+void GameEnterStatePlayPromote(GameContext *game, GameState previous)
+{
+	const int menuWidth = 170; // px
+	const int buttonWidth = 60; // px
+	const int buttonHeight = 40; // px
+	const int y0 = 32; // px
+	const int y1 = 20; // px
+	const int gapY = 5; // px
+	const int numOptions = 4; // number of promotion pieces to choose from
+	const int teamOffsetY = 40; // px
+	assert(previous == GS_PLAY);
+	assert(game->normalChess);
+	// Initialize promotion menu.
+	// Note that the menu's Y position moves down for when the black team is promoting because
+	// the piece is further down on the screen than for the white team.
+	NormalChessKind currentKing = NormalChessCurrentKing(game->normalChess);
+	game->promotionMenuRect = (Rectangle)
+	{
+		game->boardOffset.x + game->tileSize * 8 + 10,
+		game->boardOffset.y + ((currentKing == WHITE_KING)? 0 : teamOffsetY),
+		menuWidth,
+		y0 + (buttonHeight + gapY) * numOptions + y1,
+	};
+	// Initialize promotion menu buttons
+	NormalChessKind baseKind = currentKing;
+	for (int i = 0; i < numOptions; i++)
+	{
+		NormalChessKind k = baseKind + i;
+		Sprite button = (Sprite)
+		{
+			.data = (SpriteData){ .kind = SK_PROMOTE_BUTTON, .as_promoteButton = k },
+			.refTexture = &game->texPieces,
+			.textureRect = NormalChessKindToTextureRect(k),
+			.boundingBox = (Rectangle)
+			{
+				.x = game->promotionMenuRect.x + (game->promotionMenuRect.width / 2) - (buttonWidth / 2),
+				.y = game->promotionMenuRect.y + y0 + (buttonHeight + gapY) * i,
+				.width = buttonWidth,
+				.height = buttonHeight,
+			},
+		};
+		arrpush(game->arrSprites, button);
+	}
+	// Use refSelectedSprite to refer to the pawn to promote.
+	NormalChessPiece *promoteP = NormalChessGetPawnPromotion(game->normalChess);
+	game->refSelectedSprite = SpritesArrFindNormalChessSpriteFor(game->arrSprites, promoteP);
+}
+
+// Meant to be called by GameEnterState.
+void GameEnterStatePlay(GameContext *game, GameState previous)
+{
+
+	// Enter play state.
+	if (previous == GS_PLAY_PROMOTE || previous == GS_PLAY_ANIMATE)
+	{
+		// Returning from in-game promotion or animation.
+		assert(game->normalChess);
+	}
+	else
+	{
+		// Initialize the play state.
+		game->boardOffset = (Vector2) { 160, 110 };
+		game->normalChess = NormalChessInit();
+		game->arrDraggedPieceMoves = NULL;
+		game->refSelectedSprite = NULL;
+		game->arrSprites = NULL;
+		// Initialize game sprites from normal chess pieces.
+		assert(!game->arrSprites);
+		game->arrSprites = SpritesArrCreateNormalChess(game);
+	}
+}
+
+// Meant to be called by GameEnterState.
+void GameEnterStatePlayAnimate(GameContext *game, GameState previous)
+{
+	assert(previous == GS_PLAY);
+	assert(0 && "not implemented yet");
+}
+
+// Meant to be called by GameEnterState.
+void GameEnterStateGameOver(GameContext *game, GameState previous)
+{
+	assert(previous == GS_PLAY);
+	assert(0 && "not implemented yet");
+}
+
+// Meant to be called by GameEnterState.
+void GameEnterStateMainMenu(GameContext *game, GameState previous)
+{
+	assert(previous == GS_NONE && "TODO: handle switching to main menu from other states.");
 }
 
 // What to do when switch FROM previous state TO current state.
 void GameEnterState(GameContext *game, GameState previous)
 {
 	assert(game);
+	_Static_assert(_GS_COUNT == 6, "exhaustive handling of all GameState's");
 	switch (game->state)
 	{
 		case GS_PLAY:
-			if (previous == GS_PLAY_PROMOTE)
-			{
-				// Returning from in-game promotion.
-				assert(game->normalChess);
-			}
-			else
-			{
-				// Initialize the play state.
-				game->normalChess = NormalChessInit();
-				// Initialize sprites from normal chess.
-				assert(!game->arrSprites);
-				game->arrSprites = SpritesArrCreateNormalChess(game);
-			}
+			GameEnterStatePlay(game, previous);
+			break;
+		case GS_PLAY_ANIMATE:
+			GameEnterStatePlayAnimate(game, previous);
 			break;
 		case GS_PLAY_PROMOTE:
+			GameEnterStatePlayPromote(game, previous);
 			break;
 		case GS_GAME_OVER:
+			GameEnterStateGameOver(game, previous);
 			break;
 		case GS_MAIN_MENU:
+			GameEnterStateMainMenu(game, previous);
 			break;
-		default:
+		case GS_NONE:
 			assert(0 && "unhandled state");
 	}
 }
@@ -1657,9 +1809,26 @@ void UpdatePlay(GameContext *game)
 			if (Vector2ArrFind(game->arrDraggedPieceMoves, mouseSquare))
 			{
 				// Released mouse over a valid movement square for the piece.
+				// Do the chess game move. Do not increment game turn yet.
 				GameDoMoveNormalChess(game, col, row);
 				assert(!game->refSelectedSprite);
 				assert(!game->arrDraggedPieceMoves);
+				// Check for pawn promotion.
+				if (NormalChessGetPawnPromotion(game->normalChess))
+				{
+					// Do promotion. Coming back from promotion state will increment chess game turn.
+					GameSwitchState(game, GS_PLAY_PROMOTE);
+				}
+				else
+				{
+					// Was not a promotion, so increment chess game turn now.
+					game->normalChess->turn++;
+					if (NormalChessIsGameOver(game->normalChess))
+					{
+						// If the game is over, switch states.
+						GameSwitchState(game, GS_GAME_OVER);
+					}
+				}
 			}
 		}
 	}
@@ -1691,11 +1860,8 @@ void UpdatePlay(GameContext *game)
 
 void UpdatePlayPromote(GameContext *game)
 {
-	if (0)
-	{
-		// Done promoting, go back to play
-		GameSwitchState(game, GS_PLAY);
-	}
+	return;
+	assert(0 && "not implemented yet");
 }
 
 void UpdateGameOver(GameContext *game)
@@ -1714,25 +1880,34 @@ void UpdateGameOver(GameContext *game)
 
 void UpdateMainMenu(GameContext *game)
 {
-	// TODO: implement menu
-	if (game->ticks >= 30)
-	{
-		GameSwitchState(game, GS_PLAY);
-	}
+	assert(0 && "not implemented yet");
+}
+
+void UpdatePlayAnimate(GameContext *game)
+{
+	assert(0 && "not implemented yet");
 }
 
 void UpdateDebug(GameContext *game)
 {
-	if (IsKeyReleased(KEY_ZERO))
+	if (IsKeyReleased(KEY_R))
 	{
+		// [R] -> switch to play state (will reset play state)
+		GameSwitchState(game, GS_PLAY);
+	}
+	else if (IsKeyReleased(KEY_ZERO))
+	{
+		// [0] -> set debug level to zero
 		game->isDebug = 0;
 	}
 	else if (IsKeyReleased(KEY_EQUAL))
 	{
+		// [+] -> Increase debug level
 		game->isDebug++;
 	}
 	else if (IsKeyReleased(KEY_MINUS))
 	{
+		// [-] -> Increase debug level
 		// Don't allow isDebug to go negative.
 		if (game->isDebug > 0)
 		{
@@ -1742,11 +1917,14 @@ void UpdateDebug(GameContext *game)
 }
 
 void Update(GameContext *game) {
-	UpdateDebug(game);
+	_Static_assert(_GS_COUNT == 6, "exhaustive handling of all GameState's");
 	switch (game->state)
 	{
 		case GS_PLAY:
 			UpdatePlay(game);
+			break;
+		case GS_PLAY_ANIMATE:
+			UpdatePlayAnimate(game);
 			break;
 		case GS_PLAY_PROMOTE:
 			UpdatePlayPromote(game);
@@ -1758,8 +1936,9 @@ void Update(GameContext *game) {
 			UpdateMainMenu(game);
 			break;
 		case GS_NONE:
-			assert(0 && "game->state should never have the value of GS_NONE");
+			assert(0 && "game->state should never have the value of GS_NONE in Update()");
 	}
+	UpdateDebug(game);
 	game->ticks++;
 }
 
@@ -1778,12 +1957,33 @@ void DrawSprite(const GameContext *game, const Sprite *s)
 	switch (s->data.kind)
 	{
 		case SK_NORMAL_CHESS_PIECE:
+			// Draw normal chess piece sprite.
 			DrawTextureRecCentered(*s->refTexture,
 					NormalChessKindToTextureRect(s->data.as_normalChessPiece->kind),
 					s->boundingBox);
 			break;
+		case SK_PROMOTE_BUTTON:
+			// Draw promotion button sprite.
+			{
+				Rectangle shrunk = (Rectangle)
+				{
+					.x = s->boundingBox.x + 1,
+					.y = s->boundingBox.y + 1,
+					.width = s->boundingBox.width - 2,
+					.height = s->boundingBox.height - 2,
+				};
+				DrawRectangleRec(shrunk, LIGHTGRAY);
+				DrawRectangleLinesEx(shrunk, 2, GRAY);
+				DrawTextureRecCentered(*s->refTexture,
+						NormalChessKindToTextureRect(s->data.as_promoteButton),
+						s->boundingBox);
+				break;
+			}
+		case SK_NONE:
+			// Dummy sprite. Do nothing.
+			break;
 		default:
-			assert(0 && "not implemented");
+			assert(0 && "unhandled SpriteKind");
 	}
 	// Debug draw bounding box
 	if (game->isDebug >= 3)
@@ -1820,12 +2020,17 @@ void DrawPlay(const GameContext *game)
 			DrawRectangle(x, y, tileSize, tileSize, SELECT_COLOR);
 		}
 	}
-	// Draw sprites except for the selected one.
+	// Draw normal chess sprites except for the selected one.
 	for (int i = 0; i < arrlen(game->arrSprites); i++)
 	{
-		if (!game->refSelectedSprite || game->refSelectedSprite != &game->arrSprites[i])
+		Sprite *s = &game->arrSprites[i];
+		if (s->data.kind != SK_NORMAL_CHESS_PIECE)
 		{
-			DrawSprite(game, &game->arrSprites[i]);
+			continue;
+		}
+		if (!game->refSelectedSprite || game->refSelectedSprite != s)
+		{
+			DrawSprite(game, s);
 		}
 	}
 	// Draw the selected one now so it is always on top.
@@ -1913,11 +2118,81 @@ void DrawDebug(const GameContext *game)
 	}
 }
 
+void DrawPlayAnimate(const GameContext *game)
+{
+	assert(0 && "not implemented yet");
+}
+
+void DrawPlayPromote(const GameContext *game)
+{
+	const int arrowGap = 10;
+	const int arrowSize = 20;
+	const int textGapX = 7;
+	const int textGapY = 5;
+	assert(game);
+	// Use play state drawing.
+	DrawPlay(game);
+	assert(game->refSelectedSprite);
+	// Draw the menu for selecting a piece rank to promote to.
+	int startX = game->refSelectedSprite->boundingBox.x + game->refSelectedSprite->boundingBox.width/2;
+	int startY = game->refSelectedSprite->boundingBox.y + game->refSelectedSprite->boundingBox.height/2;
+	int lineY1;
+	if (NormalChessCurrentKing(game->normalChess) == WHITE_KING)
+	{
+		lineY1 = game->promotionMenuRect.y + arrowGap;
+	}
+	else
+	{
+		lineY1 = game->promotionMenuRect.y + game->promotionMenuRect.height - arrowGap - arrowSize;
+	}
+	int lineY2 = lineY1 + arrowSize;
+	int lineEndX;
+	if (game->promotionMenuRect.x > startX)
+	{
+		startX += game->tileSize / 4;
+		lineEndX = game->promotionMenuRect.x;
+		DrawTriangle((Vector2){ startX, startY },
+				(Vector2){ lineEndX, lineY2 },
+				(Vector2){ lineEndX, lineY1 }, 
+				RAYWHITE);
+	}
+	else
+	{
+		startX -= game->tileSize / 4;
+		lineEndX = game->promotionMenuRect.x + game->promotionMenuRect.width;
+		DrawTriangle((Vector2){ startX, startY },
+				(Vector2){ lineEndX, lineY1 }, 
+				(Vector2){ lineEndX, lineY2 },
+				(Color){ 255, 255, 255, 100 });
+	}
+	float roundness = 0.08;
+	float numSegments = 3;
+	DrawRectangleRounded(game->promotionMenuRect, roundness, numSegments, RAYWHITE);
+	DrawText("Pawn Promotion", game->promotionMenuRect.x + textGapX, game->promotionMenuRect.y + textGapY,
+			20, BLUE);
+	// Draw button sprites.
+	for (int i = 0; i < arrlen(game->arrSprites); i++)
+	{
+		Sprite *s = &game->arrSprites[i];
+		if (s->data.kind == SK_PROMOTE_BUTTON)
+		{
+			DrawSprite(game, s);
+		}
+	}
+}
+
 void Draw(const GameContext *game) {
+	_Static_assert(_GS_COUNT == 6, "exhaustive handling of all GameState's");
 	switch (game->state)
 	{
 		case GS_PLAY:
 			DrawPlay(game);
+			break;
+		case GS_PLAY_ANIMATE:
+			DrawPlayAnimate(game);
+			break;
+		case GS_PLAY_PROMOTE:
+			DrawPlayPromote(game);
 			break;
 		case GS_GAME_OVER:
 			DrawGameOver(game);
@@ -1925,8 +2200,8 @@ void Draw(const GameContext *game) {
 		case GS_MAIN_MENU:
 			DrawMainMenu(game);
 			break;
-		default:
-			// Unknown game state
+		case GS_NONE:
+			assert(0 && "unhandled state");
 			break;
 	}
 	DrawDebug(game);
@@ -1938,6 +2213,7 @@ void GameCleanup(GameContext *game)
 	// Make sure every pointer has been dealt with
 	assert(game->normalChess == NULL);
 	assert(game->arrDraggedPieceMoves == NULL);
+	// TODO: cleanup textures?
 }
 
 void Test(void)
@@ -1955,10 +2231,9 @@ int main(void) {
 	GameContext game = (GameContext)
 	{
 		.isDebug              = 0, // integer for game debug flag, higher number means more debug info
-		.state                = GS_MAIN_MENU,
+		.state                = GS_PLAY,
 		.ticks                = 0,
 		.normalChess          = NULL,
-		.boardOffset          = (Vector2) { 160, 110 },
 		.tileSize             = TEXTURE_TILE_SIZE * 2,
 		.arrDraggedPieceMoves = NULL,
 		.refSelectedSprite    = NULL,
