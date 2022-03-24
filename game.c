@@ -13,6 +13,7 @@
 #define abs(x) (((x) > 0)? (x) : -(x))
 #define sign(x) ((x)? (((x) > 0)? 1 : -1) : 0)
 
+// TODO: don't let pawns do a double move if there is a piece in the way!
 // TODO: add game turn timers.
 // TODO: add gameplay buttons to quit, resign, restart, etc..
 // TODO: add particles.
@@ -20,11 +21,11 @@
 
 typedef enum GameState
 {
-	GS_NONE,
-	GS_PLAY,         // This state has a NormalChess game going on still.
-	GS_PLAY_ANIMATE, // This state has a NormalChess game going on still.
-	GS_PLAY_PROMOTE, // This state has a NormalChess game going on still.
-	GS_GAME_OVER,    // This state has a NormalChess game going on still.
+	GS_NONE,         // The game should never be in this state, but it is useful.
+	GS_PLAY,         // This state is the main play state.
+	GS_PLAY_ANIMATE, // Sub-state of play state
+	GS_PLAY_PROMOTE, // Sub-state of play state
+	GS_GAME_OVER,    // Sub-state of play state
 	GS_MAIN_MENU,
 } GameState;
 #define _GS_COUNT (GS_MAIN_MENU + 1)
