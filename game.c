@@ -2200,6 +2200,7 @@ void DrawSprite(const GameContext *game, const Sprite *s)
 			{
 				const Color fillColor = LIGHTGRAY;
 				const Color hoverColor = RAYWHITE;
+				const Color textColor = GRAY;
 				Color outlineColor = GRAY;
 				Rectangle shrunk = (Rectangle)
 				{
@@ -2218,7 +2219,7 @@ void DrawSprite(const GameContext *game, const Sprite *s)
 				}
 				DrawRectangleRec(shrunk, fillColor);
 				DrawTextCentered(s->data.as_genericButton.text, shrunk.x + shrunk.width/2,
-						shrunk.y + shrunk.height/2, 20, outlineColor);
+						shrunk.y + shrunk.height/2, 20, textColor);
 				DrawRectangleLinesEx(shrunk, 2, outlineColor);
 				break;
 			}
@@ -2293,11 +2294,6 @@ void DrawPlay(const GameContext *game)
 	// Debug info
 	if (game->isDebug)
 	{
-		if (game->isDebug >= 3)
-		{
-			DrawText(TextFormat("selected piece: %p", GameGetValidSelectedPiece(game)),
-					190, 220, 20, WHITE);
-		}
 		// draw list of sprites
 		if (game->isDebug >= 6)
 		{
@@ -2305,10 +2301,16 @@ void DrawPlay(const GameContext *game)
 			int scroll = -2 * (game->ticks % 100);
 			for (int i = 0; i < arrlen(game->arrSprites); i++)
 			{
-				Sprite s = game->arrSprites[i];
-				snprintf(msg, sizeof(msg), "#%2d: %s at (%3d, %3d)",
-						i, SpriteKindToStr(s.data.kind), (int)s.boundingBox.x, (int)s.boundingBox.y);
-				DrawText(msg, 180, 30 + scroll + i * 18, 18, GREEN);
+				Sprite *s = &game->arrSprites[i];
+				Color textColor = GREEN;
+				if (s == game->refSelectedSprite)
+				{
+					textColor = BLUE;
+				}
+				snprintf(msg, sizeof(msg), "#%2d: %s at (%3d, %3d)", i,
+						SpriteKindToStr(s->data.kind), (int)s->boundingBox.x,
+						(int)s->boundingBox.y);
+				DrawText(msg, 180, 30 + scroll + i * 18, 18, textColor);
 			}
 		}
 		// Normal chess debug
