@@ -784,9 +784,13 @@ int PiecesMoveIsBlocked(const NormalChessPiece **arrPieces, const NormalChessPie
 	{
 		case WHITE_PAWN:
 		case BLACK_PAWN:
-			// Pawn is blocked for diagonal moves if there is no
-			// piece for it to capture at the square.
-			return targetCol != p->col && !PiecesGetAtConst(arrPieces, targetRow, targetCol);
+			{
+				// Pawn is blocked for diagonal moves if there is no piece for it to capture at the
+				// square. Pawn is also blocked for forward moves if there is a piece blocking,
+				// because it cannot capture forwards.
+				const NormalChessPiece *targetP = PiecesGetAtConst(arrPieces, targetRow, targetCol);
+				return (targetCol != p->col && !targetP) || (targetCol == p->col && targetP);
+			}
 		case WHITE_QUEEN:
 		case BLACK_QUEEN:
 		case WHITE_BISHOP:
@@ -1330,13 +1334,6 @@ int NormalChessAllMovesContains(const NormalChess *c, NormalChessPiece *p, int r
 	}
 	// A piece may not move if it is pinned to the king
 	if (PiecesIsPiecePinned(arrPiecesConst, p, row, col))
-	{
-		return 0;
-	}
-	// Exception: pawns cannot capture forward.
-	if ((p->kind == WHITE_PAWN || p->kind == BLACK_PAWN)
-			&& col == p->col
-			&& PiecesGetAtConst(arrPiecesConst, row, col))
 	{
 		return 0;
 	}
