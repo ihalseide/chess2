@@ -679,11 +679,9 @@ void PiecesDoMove(NormalChessPiece **arrPieces, int startRow, int startCol, int 
 	assert(!PiecesGetAt(arrPieces, targetRow, targetCol));
 	// Find the piece in the array at the location and move it
 	NormalChessPiece *p = PiecesGetAt(arrPieces, startRow, startCol);
-	if (p)
-	{
-		p->row = targetRow;
-		p->col = targetCol;
-	}
+	assert(p);
+	p->row = targetRow;
+	p->col = targetCol;
 }
 
 // Remove the piece at target and move the piece at start to the target.
@@ -901,6 +899,7 @@ int NormalChessSpecialMovesContains(const NormalChess *chess, const NormalChessP
 						&& !chess->hasWhiteKingsRookMoved
 						&& dCol == 2
 						&& dRow == 0
+						&& PiecesGetAtConst(arrPiecesConst, p->row, 7) // must be rook piece
 						&& !PiecesGetAtConst(arrPiecesConst, p->row, p->col + 1)
 						&& !PiecesCanTeamCaptureSpot(arrPiecesConst, enemyKing, p->row, p->col + 1)
 						&& !PiecesCanTeamCaptureSpot(arrPiecesConst, enemyKing, p->row, p->col + 2);
@@ -912,6 +911,7 @@ int NormalChessSpecialMovesContains(const NormalChess *chess, const NormalChessP
 						&& !chess->hasWhiteQueensRookMoved
 						&& dCol == -2
 						&& dRow == 0
+						&& PiecesGetAtConst(arrPiecesConst, p->row, 0) // must be rook piece
 						&& !PiecesGetAt(chess->arrPieces, p->row, p->col - 1)
 						&& !PiecesCanTeamCaptureSpot(arrPiecesConst, enemyKing, p->row, p->col - 1)
 						&& !PiecesCanTeamCaptureSpot(arrPiecesConst, enemyKing, p->row, p->col - 2)
@@ -936,6 +936,7 @@ int NormalChessSpecialMovesContains(const NormalChess *chess, const NormalChessP
 					&& !chess->hasBlackKingsRookMoved
 					&& dCol == 2
 					&& dRow == 0
+					&& PiecesGetAtConst(arrPiecesConst, p->row, 7) // must be rook piece
 					&& !PiecesGetAtConst(arrPiecesConst, p->row, p->col + 1)
 					&& !PiecesCanTeamCaptureSpot(arrPiecesConst, enemyKing, p->row, p->col + 1)
 					&& !PiecesCanTeamCaptureSpot(arrPiecesConst, enemyKing, p->row, p->col + 2);
@@ -947,6 +948,7 @@ int NormalChessSpecialMovesContains(const NormalChess *chess, const NormalChessP
 					&& !chess->hasBlackQueensRookMoved
 					&& dCol == -2
 					&& dRow == 0
+					&& PiecesGetAtConst(arrPiecesConst, p->row, 0) // must be rook piece
 					&& !PiecesGetAtConst(arrPiecesConst, p->row, p->col - 1)
 					&& !PiecesCanTeamCaptureSpot(arrPiecesConst, enemyKing, p->row, p->col - 1)
 					&& !PiecesCanTeamCaptureSpot(arrPiecesConst, enemyKing, p->row, p->col - 2)
@@ -1091,6 +1093,7 @@ NormalChessMove NormalChessCreateMove(NormalChess *chess, int startCol, int star
 	}
 }
 
+// Do castle move.
 void NormalChessDoCastle(NormalChess *chess, NormalChessMove move)
 {
 	NormalChessPiece *king = NormalChessMoveGetSubject(move, chess->arrPieces);
@@ -1120,7 +1123,7 @@ void NormalChessDoCastle(NormalChess *chess, NormalChessMove move)
 	else
 	{
 		// Queen's-side rook
-		rookTargetCol = move.targetCol - 1;
+		rookTargetCol = move.targetCol + 1;
 		// Update this additional movement flag for this rook.
 		switch (king->kind)
 		{
@@ -1159,6 +1162,7 @@ void NormalChessUpdateMovementFlags(NormalChess *chess, NormalChessMove move)
 {
 	NormalChessPiece *moveSubject = NormalChessMoveGetSubject(move, chess->arrPieces);
 	assert(moveSubject);
+	// If the subject moves.
 	switch (moveSubject->kind)
 	{
 		case WHITE_KING:
@@ -1198,6 +1202,44 @@ void NormalChessUpdateMovementFlags(NormalChess *chess, NormalChessMove move)
 		default:
 			// No flags to update for other pieces.
 			break;
+	}
+	// If a rook is captured, it is considered to have moved so that castling
+	// is no longer possible with that rook.
+	NormalChessPiece *moveObject = NormalChessMoveGetObject(move, chess->arrPieces);
+	if (moveObject)
+	{
+		switch (moveObject->kind)
+		{
+			case WHITE_ROOK:
+				// Rook was captured.
+				if (move.objectCol > 4)
+				{
+					// King's side
+					chess->hasWhiteKingsRookMoved = 1;
+				}
+				else
+				{
+					// Queen's side
+					chess->hasWhiteQueensRookMoved = 1;
+				}
+				break;
+			case BLACK_ROOK:
+				// Rook was captured.
+				if (move.objectCol > 4)
+				{
+					// King's side
+					chess->hasBlackKingsRookMoved = 1;
+				}
+				else
+				{
+					// Queen's side
+					chess->hasBlackQueensRookMoved = 1;
+				}
+				break;
+			default:
+				// No flags to update for other pieces.
+				break;
+		}
 	}
 }
 
@@ -2158,7 +2200,7 @@ void DrawPlay(const GameContext *game)
 			}
 		}
 		// Normal chess debug
-		if (game->isDebug >= 4)
+		if (game->isDebug >= 1)
 		{
 			char msg[100];
 			int x1 = 15, y1 = 5;
@@ -2354,3 +2396,4 @@ int main(void) {
     return 0;
 }
 
+/* vi: set colorcolumn=101 textwidth=100 tabstop=4 noexpandtab: */
