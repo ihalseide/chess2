@@ -13,7 +13,6 @@
 #define abs(x) (((x) > 0)? (x) : -(x))
 #define sign(x) ((x)? (((x) > 0)? 1 : -1) : 0)
 
-// TODO: implement pawn promotion.
 // TODO: add game turn timers.
 // TODO: add gameplay buttons to quit, resign, restart, etc..
 // TODO: add particles.
@@ -85,16 +84,27 @@ typedef struct NormalChess
 	NormalChessPiece **arrPieces; // dynamic array
 } NormalChess;
 
+typedef struct PiecePromoteButton
+{
+	NormalChessKind pieceKind;
+	int isClick;
+	int isHover;
+} PiecePromoteButton;
+
 // Tagged union for the data of different kinds of sprites.
+// Note: don't give a sprite any "owned" pointers to memory, because it might
+// not be free'd when the sprite is.
 typedef struct SpriteData
 {
 	SpriteKind kind;
 	union {
 		NormalChessPiece *as_normalChessPiece; // for normal chess game pieces.
-		NormalChessKind as_promoteButton; // for buttons to click when promoting a pawn
+		PiecePromoteButton as_promoteButton;
 	};
 } SpriteData;
 
+// Note: don't give a sprite any "owned" pointers to memory, because it might
+// not be free'd when the sprite is.
 typedef struct Sprite
 {
 	SpriteData data;
@@ -141,6 +151,18 @@ float Vector2DistanceSquared(Vector2 a, Vector2 b)
 	float dx = a.x - b.x;
 	float dy = a.y - b.y;
 	return dx * dx + dy * dy;
+}
+
+const char *SpriteKindToStr(SpriteKind k)
+{
+	switch (k)
+	{
+		case SK_NONE:               return "SK_NONE";
+		case SK_PROMOTE_BUTTON:     return "SK_PROMOTE_BUTTON";
+		case SK_NORMAL_CHESS_PIECE: return "SK_NORMAL_CHESS_PIECE";
+		default:
+			return "(invalid SpriteKind)";
+	}
 }
 
 const char *GameStateToStr(GameState s)
@@ -1408,6 +1430,7 @@ void GameCleanupState(GameContext *game)
 			// Free sprites array
 			if (game->arrSprites)
 			{
+				// Note: assuming that no sprite "owns" a pointer to memory.
 				arrfree(game->arrSprites);
 				game->arrSprites = NULL;
 			}
@@ -1438,7 +1461,22 @@ void GameLeaveStatePlay(GameContext *game, GameState next)
 // Meant to be called by GameLeaveState.
 void GameLeaveStatePlayPromote(GameContext *game, GameState next)
 {
-	if (next != GS_PLAY)
+	if (next == GS_PLAY)
+	{
+		// Free the button sprites. Changes the arrSprites len!
+		for (int i = 0; i < arrlen(game->arrSprites); i++)
+		{
+			Sprite s = game->arrSprites[i];
+			if (s.data.kind == SK_PROMOTE_BUTTON)
+			{
+				arrdelswap(game->arrSprites, i);
+				i--;
+			}
+		}
+		// This is where the turn is incremented for promotion.
+		game->normalChess->turn++;
+	}
+	else
 	{
 		GameCleanupState(game);
 	}
@@ -1518,13 +1556,21 @@ void GameEnterStatePlayPromote(GameContext *game, GameState previous)
 		y0 + (buttonHeight + gapY) * numOptions + y1,
 	};
 	// Initialize promotion menu buttons
-	NormalChessKind baseKind = currentKing;
 	for (int i = 0; i < numOptions; i++)
 	{
-		NormalChessKind k = baseKind + i;
+		NormalChessKind k = currentKing + 1 + i;
 		Sprite button = (Sprite)
 		{
-			.data = (SpriteData){ .kind = SK_PROMOTE_BUTTON, .as_promoteButton = k },
+			.data = (SpriteData)
+			{
+				.kind = SK_PROMOTE_BUTTON,
+				.as_promoteButton = (PiecePromoteButton)
+				{
+					.pieceKind = k,
+					.isClick = 0,
+					.isHover = 0,
+				},
+			},
 			.refTexture = &game->texPieces,
 			.textureRect = NormalChessKindToTextureRect(k),
 			.boundingBox = (Rectangle)
@@ -1858,10 +1904,51 @@ void UpdatePlay(GameContext *game)
 	}
 }
 
+// Meant to be called from Update.
 void UpdatePlayPromote(GameContext *game)
 {
-	return;
-	assert(0 && "not implemented yet");
+	Vector2 mousePos = GetMousePosition();
+	if (CheckCollisionPointRec(mousePos, game->promotionMenuRect))
+	{
+		// Check each button in the menu.
+		int didHover = 0; // can only hover 1 button
+		int didClick = 0; // can only click 1 button
+		for (int i = 0; i < arrlen(game->arrSprites); i++)
+		{
+			Sprite *s = &game->arrSprites[i];
+			if (s->data.kind != SK_PROMOTE_BUTTON)
+			{
+				continue;
+			}
+			// Update hover fully and when a button starts to be clicked.
+			s->data.as_promoteButton.isHover = 0;
+			s->data.as_promoteButton.isClick = 0;
+			if (CheckCollisionPointRec(mousePos, s->boundingBox))
+			{
+				if (IsMouseButtonReleased(0))
+				{
+					// The current button has been clicked on.
+					// Promote the pawn with the selection.
+					assert(game->refSelectedSprite);
+					NormalChessPiece *p = game->refSelectedSprite->data.as_normalChessPiece;
+					p->kind = s->data.as_promoteButton.pieceKind;
+					game->refSelectedSprite->textureRect = NormalChessKindToTextureRect(p->kind);
+					GameSwitchState(game, GS_PLAY);
+					break;
+				}
+				else if (!didHover)
+				{
+					s->data.as_promoteButton.isHover = 1;
+					didHover = 1;
+					if (!didClick && IsMouseButtonDown(0))
+					{
+						s->data.as_promoteButton.isClick = 1;
+						didClick = 1;
+					}
+				}
+			}
+		}
+	}
 }
 
 void UpdateGameOver(GameContext *game)
@@ -1972,10 +2059,20 @@ void DrawSprite(const GameContext *game, const Sprite *s)
 					.width = s->boundingBox.width - 2,
 					.height = s->boundingBox.height - 2,
 				};
-				DrawRectangleRec(shrunk, LIGHTGRAY);
-				DrawRectangleLinesEx(shrunk, 2, GRAY);
+				const Color fillColor = LIGHTGRAY;
+				Color outlineColor = GRAY;
+				if (s->data.as_promoteButton.isClick)
+				{
+					outlineColor = fillColor;
+				}
+				else if (s->data.as_promoteButton.isHover)
+				{
+					outlineColor = GREEN;
+				}
+				DrawRectangleRec(shrunk, fillColor);
+				DrawRectangleLinesEx(shrunk, 2, outlineColor);
 				DrawTextureRecCentered(*s->refTexture,
-						NormalChessKindToTextureRect(s->data.as_promoteButton),
+						NormalChessKindToTextureRect(s->data.as_promoteButton.pieceKind),
 						s->boundingBox);
 				break;
 			}
@@ -2046,17 +2143,17 @@ void DrawPlay(const GameContext *game)
 			DrawText(TextFormat("selected piece: %p", GameGetValidSelectedPiece(game)),
 					190, 220, 20, WHITE);
 		}
-		// draw list of game pieces
+		// draw list of sprites
 		if (game->isDebug >= 6)
 		{
-			char msg[50];
+			char msg[100];
 			int scroll = -2 * (game->ticks % 100);
-			for (int i = 0; i < arrlen(game->normalChess->arrPieces); i++)
+			for (int i = 0; i < arrlen(game->arrSprites); i++)
 			{
-				NormalChessPiece *p = game->normalChess->arrPieces[i];
-				snprintf(msg, sizeof(msg), "#%2d: %s at row:%2d, col:%2d",
-						i, NormalChessKindToStr(p->kind), p->row, p->col);
-				DrawText(msg, 180, 30 + scroll + i * 16, 20, WHITE);
+				Sprite s = game->arrSprites[i];
+				snprintf(msg, sizeof(msg), "#%2d: %s at (%3d, %3d)",
+						i, SpriteKindToStr(s.data.kind), (int)s.boundingBox.x, (int)s.boundingBox.y);
+				DrawText(msg, 180, 30 + scroll + i * 18, 18, GREEN);
 			}
 		}
 		// Normal chess debug
