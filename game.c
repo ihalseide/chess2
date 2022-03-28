@@ -13,9 +13,10 @@
 #define abs(x) (((x) > 0)? (x) : -(x))
 #define sign(x) ((x)? (((x) > 0)? 1 : -1) : 0)
 
+// TODO: add nice tiles and background to the chess game.
 // TODO: add gameplay buttons to quit, resign, restart, etc..
 // TODO: add game turn timers.
-// TODO: add sound effects
+// TODO: add sound effects.
 // TODO: add particles.
 // TODO: add music.
 
@@ -868,7 +869,8 @@ int NormalChessSpecialMovesContains(const NormalChess *chess, const NormalChessP
 		case WHITE_PAWN:
 			// Double first move OR En passant
 			if (p->row == 1 && dRow == 2 && dCol == 0
-					&& !PiecesGetAtConst(arrPiecesConst, p->row + 1, p->col))
+					&& !PiecesGetAtConst(arrPiecesConst, p->row + 1, p->col)
+					&& !PiecesGetAtConst(arrPiecesConst, p->row + 2, p->col))
 			{
 				// Double first move
 				return 1;
@@ -886,7 +888,8 @@ int NormalChessSpecialMovesContains(const NormalChess *chess, const NormalChessP
 		case BLACK_PAWN:
 			// Double first move OR En passant
 			if (p->row == 6 && dRow == -2 && dCol == 0
-					&& !PiecesGetAtConst(arrPiecesConst, p->row - 1, p->col))
+					&& !PiecesGetAtConst(arrPiecesConst, p->row - 1, p->col)
+					&& !PiecesGetAtConst(arrPiecesConst, p->row - 2, p->col))
 			{
 				// Double first move
 				return 1;
