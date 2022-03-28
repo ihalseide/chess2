@@ -96,9 +96,9 @@ void DrawTileMapComponent(TileMapComponent *tmap)
 		}
 	}
 	// Debug draw:
-	const int width = tmap->tileSize * tmap->map->columns;
-	const int height = tmap->tileSize * tmap->map->rows;
-	DrawRectangleLines(tmap->x0, tmap->y0, width, height, RED);
+	//const int width = tmap->tileSize * tmap->map->columns;
+	//const int height = tmap->tileSize * tmap->map->rows;
+	//DrawRectangleLines(tmap->x0, tmap->y0, width, height, RED);
 }
 
 static int TileInfoArrFind(const TileInfo *arrTileInfo, TileInfo t)
