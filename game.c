@@ -5,6 +5,7 @@
 #include "raylib.h"
 #define STB_DS_IMPLEMENTATION
 #include "stb_ds.h"
+#include "tilemap.h"
 
 #define TEXTURE_TILE_SIZE 16
 #define HI_COLOR (Color){ GOLD.r, GOLD.g, GOLD.b, 128 }
@@ -143,6 +144,7 @@ typedef struct GameContext
 	Vector2 *arrDraggedPieceMoves;  // board coordinates (col, row)
 	Sprite *arrSprites; // dynamic array of sprites
 	Sprite *refSelectedSprite;
+	TileMapComponent *tmapBackground;
 } GameContext;
 
 // Clamp value to a value between min and max, inclusive of min and max.
@@ -1643,10 +1645,105 @@ void GameEnterStatePlayPromote(GameContext *game, GameState previous)
 	game->refSelectedSprite = SpritesArrFindNormalChessSpriteFor(game->arrSprites, promoteP);
 }
 
+void PlayInitBackground(GameContext *game)
+{
+	// Create empty tilemap
+	int tileSize = game->tileSize;
+	int x0 = game->boardOffset.x - tileSize * 2;
+	int y0 = game->boardOffset.y - tileSize * 1;
+	assert(game);
+	assert(game->tmapBackground == NULL);
+	game->tmapBackground = TileMapComponentAlloc(x0, y0, tileSize, 12, 12);
+	int row, col;
+	TileInfo tile = (TileInfo) { .refTexture = &game->texBoard };
+	// Top-left corner
+	col = 1;
+	row = 0;
+	tile.x0 = 0;
+	tile.y0 = 0;
+	TileMapComponentSet(game->tmapBackground, col, row, tile);
+	// Top row
+	tile.x0 = tileSize;
+	tile.y0 = 0;
+	for (int i = 0; i < 8; i++)
+	{
+		col = 2 + i;
+		row = 0;
+		TileMapComponentSet(game->tmapBackground, col, row, tile);
+	}
+	// Top-right corner
+	col = 10;
+	row = 0;
+	tile.x0 = tileSize * 2;
+	tile.y0 = 0;
+	TileMapComponentSet(game->tmapBackground, col, row, tile);
+	// Right column
+	tile.x0 = tileSize * 2;
+	tile.y0 = tileSize;
+	for (int i = 0; i < 8; i++)
+	{
+		col = 10;
+		row = 1 + i;
+		TileMapComponentSet(game->tmapBackground, col, row, tile);
+	}
+	// Bottom-right corner
+	col = 10;
+	row = 9;
+	tile.x0 = tileSize * 2;
+	tile.y0 = tileSize * 2;
+	TileMapComponentSet(game->tmapBackground, col, row, tile);
+	// Bottom row
+	row = 9;
+	tile.x0 = tileSize;
+	tile.y0 = tileSize * 2;
+	for (int i = 0; i < 8; i++)
+	{
+		col = 2 + i;
+		// Extra range check
+		if (col >= game->tmapBackground->map->columns)
+		{
+			break;
+		}
+		TileMapComponentSet(game->tmapBackground, col, row, tile);
+	}
+	// Bottom-left corner
+	col = 1;
+	row = 9;
+	tile.x0 = 0;
+	tile.y0 = tileSize * 2;
+	TileMapComponentSet(game->tmapBackground, col, row, tile);
+	// Left column
+	tile.x0 = 0;
+	tile.y0 = tileSize;
+	col = 1;
+	for (int i = 0; i < 8; i++)
+	{
+		row = 1 + i;
+		TileMapComponentSet(game->tmapBackground, col, row, tile);
+	}
+	// Row labels
+	tile.y0 = tileSize * 4;
+	col = 0;
+	for (int i = 0; i < 8; i++)
+	{
+		row = 1 + i;
+		tile.x0 = (7 - i) * tileSize;
+		TileMapComponentSet(game->tmapBackground, col, row, tile);
+	}
+	// Column labels
+	tile.y0 = tileSize * 3;
+	row = 10;
+	for (int i = 0; i < 8; i++)
+	{
+		col = 2 + i;
+		tile.x0 = i * tileSize;
+		TileMapComponentSet(game->tmapBackground, col, row, tile);
+	}
+}
+
 // Meant to be called by GameEnterState.
 void GameEnterStatePlay(GameContext *game, GameState previous)
 {
-
 	// Enter play state.
 	if (previous == GS_PLAY_PROMOTE || previous == GS_PLAY_ANIMATE)
 	{
@@ -1661,6 +1758,8 @@ void GameEnterStatePlay(GameContext *game, GameState previous)
 		game->arrDraggedPieceMoves = NULL;
 		game->refSelectedSprite = NULL;
 		game->arrSprites = NULL;
+		// Initialize the background tile map.
+		PlayInitBackground(game);
 		// Initialize game sprites from normal chess pieces.
 		assert(!game->arrSprites);
 		game->arrSprites = SpritesArrCreateNormalChess(game);
@@ -2251,7 +2350,9 @@ void DrawPlay(const GameContext *game)
 	int y0 = game->boardOffset.y;
 	int tileSize = game->tileSize;
 	ClearBackground(DARKGREEN);
+	// Draw chess board and tiles
 	DrawChessBoard(x0, y0, tileSize, 8, 8);
+	DrawTileMapComponent(game->tmapBackground);
 	// Draw move highlight squares.
 	for (int i = 0; i < arrlen(game->arrDraggedPieceMoves); i++)
 	{
@@ -2285,14 +2386,14 @@ void DrawPlay(const GameContext *game)
 		}
 	}
 	// Draw buttons / menu / GUI
-	for (int i = 0; i < arrlen(game->arrSprites); i++)
-	{
-		Sprite *s = &game->arrSprites[i];
-		if (s->data.kind == SK_GENERIC_BUTTON)
-		{
-			DrawSprite(game, s);
-		}
-	}
+	//for (int i = 0; i < arrlen(game->arrSprites); i++)
+	//{
+	//	Sprite *s = &game->arrSprites[i];
+	//	if (s->data.kind == SK_GENERIC_BUTTON)
+	//	{
+	//		DrawSprite(game, s);
+	//	}
+	//}
 	// Draw the selected one now so it is always on top.
 	if (game->refSelectedSprite)
 	{
@@ -2508,6 +2609,7 @@ int main(void) {
 		.texPieces            = LoadTexture("gfx/pieces.png"),
 		.texBoard             = LoadTexture("gfx/board.png"),
 		.texGUI               = LoadTexture("gfx/gui.png"),
+		.tmapBackground       = NULL,
 	};
 	GameEnterState(&game, GS_NONE);
 	// Main loop:
