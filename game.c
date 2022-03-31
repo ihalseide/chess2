@@ -184,6 +184,7 @@ const char *SpriteKindToStr(SpriteKind k)
 	{
 		case SK_NONE:               return "SK_NONE";
 		case SK_PROMOTE_BUTTON:     return "SK_PROMOTE_BUTTON";
+		case SK_GENERIC_BUTTON:     return "SK_GENERIC_BUTTON";
 		case SK_NORMAL_CHESS_PIECE: return "SK_NORMAL_CHESS_PIECE";
 		default:
 			return "(invalid SpriteKind)";
@@ -247,7 +248,7 @@ NormalChessKind NormalChessKingKind(NormalChessKind k)
 		case BLACK_PAWN:
 			return BLACK_KING;
 		default:
-			assert(0 && "invalid piece kind");
+			assert(0 && "invalid NormalChessKind");
 	}
 }
 
