@@ -5,7 +5,7 @@ LIBS=-lraylib -lm -ldl -lpthread
 
 default: game
 
-game: game.c tilemap.o
+game: main.c game.o tilemap.o
 	$(CC) $(CFLAGS) $^ -o $@ -L. $(LIBS)
 
 %.o: %.c %.h

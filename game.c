@@ -3,160 +3,19 @@
 #include <stdlib.h>
 #include <assert.h>
 #include "raylib.h"
-#define STB_DS_IMPLEMENTATION
 #include "stb_ds.h"
 #include "tilemap.h"
-
-#define TEXTURE_TILE_SIZE 16
+#include "game.h"
 
 #define abs(x) (((x) > 0)? (x) : -(x))
 #define sign(x) ((x)? (((x) > 0)? 1 : -1) : 0)
 
 // TODO: add gameplay buttons to quit, resign, restart, etc..
+// TODO: add detection of game-over
 // TODO: add game turn timers.
 // TODO: add sound effects: checkMate, resign, game over.
 // TODO: add particles.
 // TODO: add music.
-
-typedef enum GameState
-{
-	GS_NONE,         // The game should never be in this state, but it is useful.
-	GS_PLAY,         // This state is the main play state.
-	GS_PLAY_ANIMATE, // Sub-state of play state
-	GS_PLAY_PROMOTE, // Sub-state of play state
-	GS_GAME_OVER,    // Sub-state of play state
-	GS_MAIN_MENU,
-} GameState;
-#define _GS_COUNT (GS_MAIN_MENU + 1)
-_Static_assert(_GS_COUNT == 6, "exhaustive handling of all GameState's");
-
-typedef enum NormalChessKind
-{
-	WHITE_KING,
-	WHITE_QUEEN,
-	WHITE_ROOK,
-	WHITE_BISHOP,
-	WHITE_KNIGHT,
-	WHITE_PAWN,
-	BLACK_KING,
-	BLACK_QUEEN,
-	BLACK_ROOK,
-	BLACK_BISHOP,
-	BLACK_KNIGHT,
-	BLACK_PAWN,
-} NormalChessKind;
-
-typedef enum SpriteKind
-{
-	SK_NONE,
-	SK_GENERIC_BUTTON,
-	SK_PROMOTE_BUTTON,
-	SK_NORMAL_CHESS_PIECE,
-} SpriteKind;
-
-typedef struct NormalChessPiece
-{
-	NormalChessKind kind;
-	int col; // position column
-	int row; // position row
-} NormalChessPiece;
-
-typedef struct NormalChessMove 
-{
-	int subjectCol; // The subject is the piece moving or capturing. The subject moves from this location.
-	int subjectRow;
-	int objectCol;  // The object is the other piece which is being captured (or is the rook when castling)
-	int objectRow;
-	int targetCol;  // The square the subject piece is moving to.
-	int targetRow;
-} NormalChessMove;
-
-// Normal-chess game data
-typedef struct NormalChess
-{
-	int turn;
-	int doublePawnCol; // column of the most recent double pawn move
-	int hasWhiteKingMoved;
-	int hasWhiteKingsRookMoved;
-	int hasWhiteQueensRookMoved;
-	int hasBlackKingMoved;
-	int hasBlackKingsRookMoved;
-	int hasBlackQueensRookMoved;
-	NormalChessPiece **arrPieces; // dynamic array
-} NormalChess;
-
-typedef struct PiecePromoteButton
-{
-	NormalChessKind pieceKind;
-	int isClick;
-	int isHover;
-} PiecePromoteButton;
-
-typedef struct GenericButton
-{
-	int isPressed;
-	int isClick;
-	int isHover;
-	const char *text;
-} GenericButton;
-
-// Tagged union for the data of different kinds of sprites.
-// Note: don't give a sprite any "owned" pointers to memory, because it might
-// not be free'd when the sprite is.
-typedef struct SpriteData
-{
-	SpriteKind kind;
-	union {
-		NormalChessPiece *as_normalChessPiece; // for normal chess game pieces.
-		PiecePromoteButton as_promoteButton;
-		GenericButton as_genericButton;
-	};
-} SpriteData;
-
-// Note: don't give a sprite any "owned" pointers to memory, because it might
-// not be free'd when the sprite is.
-typedef struct Sprite
-{
-	SpriteData data;
-	Rectangle boundingBox;
-	Rectangle textureRect;
-	const Texture2D *refTexture;
-} Sprite;
-
-// Note: the .state member should not be modified directly to switch states
-// because there may be things to do to clean up the current state. Use the
-// function GameSwitchState(...) to switch states.
-typedef struct GameContext
-{
-	GameState state;  // see the note above this struct definition.
-	Texture2D texPieces;  // spritesheet textures for pieces
-	Texture2D texBoard;  // spritesheet textures for board and background
-	Texture2D texGUI;  // spritesheet textures for user interface specific stuff
-	Sound soundCapture;
-	Sound soundMove;
-	Sound soundPromote;
-	Sound soundEnterPromote;
-	Sound soundCheck;
-	Sound soundCheckmate;
-	Sound soundCastle;
-	Sound soundError;
-	Sound soundGameOver;
-	Sound soundGameStart;
-	Sound soundResign;
-	Vector2 boardOffset;  // pixels
-	Rectangle promotionMenuRect;
-	int isDebug;  // higher number generally means more info
-	int ticks;  // ticks since the program started
-	int stateTicks; // ticks since the current state was entered
-	int tileSize;
-	NormalChess *normalChess;
-	Vector2 *arrDraggedPieceMoves;  // board coordinates (col, row)
-	Sprite *arrSprites; // dynamic array of sprites
-	Sprite *refSelectedSprite;
-	TileMapComponent *tmapBoard;
-	TileMapComponent *tmapBackground;
-	int handledCheck;
-} GameContext;
 
 // Clamp value to a value between min and max, inclusive of min and max.
 void IntClamp(int *value, int min, int max)
@@ -176,6 +35,26 @@ float Vector2DistanceSquared(Vector2 a, Vector2 b)
 	float dx = a.x - b.x;
 	float dy = a.y - b.y;
 	return dx * dx + dy * dy;
+}
+
+int SpriteKindIsUI(SpriteKind k)
+{
+	switch (k)
+	{
+		case SK_GENERIC_BUTTON:
+		case SK_PROMOTE_BUTTON:
+			return 1;
+		case SK_NORMAL_CHESS_PIECE:
+		case SK_NONE:
+			return 0;
+		default:
+			assert(0 && "unhandled SpriteKind");
+	}
+}
+
+int SpriteIsUI(Sprite *s)
+{
+	return s && SpriteKindIsUI(s->data.kind);
 }
 
 const char *SpriteKindToStr(SpriteKind k)
@@ -1485,6 +1364,13 @@ void GameCleanupState(GameContext *game)
 				arrfree(game->arrSprites);
 				game->arrSprites = NULL;
 			}
+			// Free UI sprites array
+			if (game->arrUISprites)
+			{
+				// Note: assuming that no sprite "owns" any pointers.
+				arrfree(game->arrUISprites);
+				game->arrUISprites = NULL;
+			}
 			// Free dyanamic moves array
 			if (game->arrDraggedPieceMoves)
 			{
@@ -1497,6 +1383,9 @@ void GameCleanupState(GameContext *game)
 		case GS_MAIN_MENU:
 			break;
 		case GS_NONE:
+			// Nothing to do
+			break;
+		default:
 			assert(0 && "unhandled state");
 	}
 }
@@ -1515,18 +1404,16 @@ void GameLeaveStatePlayPromote(GameContext *game, GameState next)
 {
 	if (next == GS_PLAY)
 	{
-		// Free the button sprites. Changes the arrSprites len!
-		for (int i = 0; i < arrlen(game->arrSprites); i++)
+		// Free the promote button sprites. Changes the arrUISprites len!
+		for (int i = 0; i < arrlen(game->arrUISprites); i++)
 		{
-			Sprite s = game->arrSprites[i];
+			Sprite s = game->arrUISprites[i];
 			if (s.data.kind == SK_PROMOTE_BUTTON)
 			{
-				arrdelswap(game->arrSprites, i);
+				arrdelswap(game->arrUISprites, i);
 				i--;
 			}
 		}
-		// This is where the turn is incremented for promotion.
-		game->normalChess->turn++;
 	}
 	else
 	{
@@ -1586,6 +1473,9 @@ void GameLeaveState(GameContext *game, GameState next)
 // Meant to be called by GameEnterState.
 void GameEnterStatePlayPromote(GameContext *game, GameState previous)
 {
+	assert(previous == GS_PLAY);
+	assert(game->normalChess);
+	PlaySound(game->soundEnterPromote);
 	const int menuWidth = 170; // px
 	const int buttonWidth = 60; // px
 	const int buttonHeight = 40; // px
@@ -1594,8 +1484,6 @@ void GameEnterStatePlayPromote(GameContext *game, GameState previous)
 	const int gapY = 5; // px
 	const int numOptions = 4; // number of promotion pieces to choose from
 	const int teamOffsetY = 40; // px
-	assert(previous == GS_PLAY);
-	assert(game->normalChess);
 	// Initialize promotion menu.
 	// Note that the menu's Y position moves down for when the black team is promoting because
 	// the piece is further down on the screen than for the white team.
@@ -1619,8 +1507,7 @@ void GameEnterStatePlayPromote(GameContext *game, GameState previous)
 				.as_promoteButton = (PiecePromoteButton)
 				{
 					.pieceKind = k,
-					.isClick = 0,
-					.isHover = 0,
+					.state = BS_ENABLED
 				},
 			},
 			.refTexture = &game->texPieces,
@@ -1633,7 +1520,7 @@ void GameEnterStatePlayPromote(GameContext *game, GameState previous)
 				.height = buttonHeight,
 			},
 		};
-		arrput(game->arrSprites, button);
+		arrput(game->arrUISprites, button);
 	}
 	// Use refSelectedSprite to refer to the pawn to promote.
 	NormalChessPiece *promoteP = NormalChessGetPawnPromotion(game->normalChess);
@@ -1655,18 +1542,19 @@ void PlayInitBackgroundTiles(GameContext *game)
 	TileInfo tile = (TileInfo)
 	{
 		.refTexture = &game->texBoard,
-		.x0 = 160,
-		.y0 = 32,
 	};
-	// Set the first tile
-	int id = TileMapComponentSet(game->tmapBackground, 0, 0, tile);
+	// Set the initial tile ids to avoid doing it for every single location.
+	tile.x0 = 160;
+	tile.y0 = 32;
+	int id1 = TileMapComponentSet(game->tmapBackground, 0, 0, tile);
 	// Set the rest of the tiles to be the same
 	for (int col = 0; col < mapCols; col++)
 	{
 		for (int row = 0; row < mapRows; row++)
 		{
 			int *loc = TileMapGet(game->tmapBackground->map, col, row);
-			*loc = id;
+			assert(loc);
+			*loc = id1;
 		}
 	}
 }
@@ -1799,7 +1687,18 @@ void GameEnterStatePlay(GameContext *game, GameState previous)
 	if (previous == GS_PLAY_PROMOTE || previous == GS_PLAY_ANIMATE)
 	{
 		// Returning from in-game promotion or animation.
-		assert(game->normalChess);
+		// TODO: check for game over
+		// TODO: play sounds here
+		// PlaySound(game->soundPromote);
+
+		// This is where the turn is incremented
+		game->normalChess->turn++;
+		if (NormalChessIsGameOver(game->normalChess))
+		{
+			// If the game is over, switch states.
+			GameSwitchState(game, GS_GAME_OVER);
+			return;
+		}
 	}
 	else
 	{
@@ -1819,8 +1718,9 @@ void GameEnterStatePlay(GameContext *game, GameState previous)
 		SpriteData defaultData = (SpriteData)
 		{
 			.kind = SK_GENERIC_BUTTON,
-			.as_genericButton = (GenericButton) { 0, 0, 0, .text = NULL, },
+			.as_genericButton = (GenericButton){0},
 		};
+		defaultData.as_genericButton.state = BS_ENABLED;
 		Sprite menuButton = (Sprite)
 		{
 			.refTexture = &game->texGUI,
@@ -1828,8 +1728,8 @@ void GameEnterStatePlay(GameContext *game, GameState previous)
 			.boundingBox = (Rectangle){ 10, 10, 70, 35 },
 			.data = defaultData,
 		};
-		menuButton.data.as_genericButton.text = "Quit";
-		arrput(game->arrSprites, menuButton);
+		menuButton.data.as_genericButton.refText = "Quit";
+		arrput(game->arrUISprites, menuButton);
 	}
 }
 
@@ -1837,7 +1737,19 @@ void GameEnterStatePlay(GameContext *game, GameState previous)
 void GameEnterStatePlayAnimate(GameContext *game, GameState previous)
 {
 	assert(previous == GS_PLAY);
-	assert(0 && "not implemented yet");
+	// TODO: setup for actually animating the pieces.
+	// Check for pawn promotion.
+	if (NormalChessGetPawnPromotion(game->normalChess))
+	{
+		// Do promotion. Coming back from promotion state will increment chess game turn.
+		GameSwitchState(game, GS_PLAY_PROMOTE);
+		return;
+	}
+	else
+	{
+		GameSwitchState(game, GS_PLAY);
+		return;
+	}
 }
 
 // Meant to be called by GameEnterState.
@@ -2033,64 +1945,99 @@ void GameDoMoveNormalChess(GameContext *game, int targetCol, int targetRow)
 			SpriteMoveToNormalChessPiece(objectSprite, game);
 		}
 	}
-	// Play sound
-	if (isCapture)
-	{
-		PlaySound(game->soundCapture);
-	}
-	else if (isCastle)
-	{
-		PlaySound(game->soundCastle);
-	}
-	else
-	{
-		PlaySound(game->soundMove);
-	}
 	// De-select the selected sprite and remove highlights.
 	game->refSelectedSprite = NULL;
 	UpdateMoveSquares(game);
-	// Clear the handledCheck flag
-	game->handledCheck = 0;
+}
+
+// Return if the button is activated.
+int SpriteButtonStateUpdate(ButtonState *bstate, Rectangle boundingBox)
+{
+	Vector2 mousePos = GetMousePosition();
+	int containsMouse = CheckCollisionPointRec(mousePos, boundingBox);
+	switch (*bstate)
+	{
+		case BS_DISABLED:
+			// Can't do anything
+			break;
+		case BS_ENABLED:
+			// Check for hover
+			if (containsMouse)
+			{
+				*bstate = BS_HOVER;
+			}
+			if (*bstate != BS_HOVER)
+			{
+				break;
+			}
+			// fall-through
+		case BS_HOVER:
+			// Check for unhover or press & activation
+			if (!containsMouse)
+			{
+				*bstate = BS_ENABLED;
+			}
+			else if (IsMouseButtonPressed(0))
+			{
+				*bstate = BS_PRESSED;
+			}
+			if (*bstate != BS_PRESSED)
+			{
+				break;
+			}
+			// fall-through
+		case BS_PRESSED:
+			// Check for activation
+			if (!containsMouse)
+			{
+				*bstate = BS_ENABLED;
+			}
+			else if (IsMouseButtonReleased(0))
+			{
+				// Newly Activated!
+				*bstate = BS_ACTIVATED;
+				return 1;
+			}
+			break;
+		case BS_ACTIVATED:
+			// No need to do anything
+			break;
+		default:
+			assert(0 && "invalid ButtonState");
+	}
+	return 0;
+}
+
+// Return value: whether the sprite button was just activated this time.
+int SpriteButtonUpdate(Sprite *s)
+{
+	assert(s);
+	switch (s->data.kind)
+	{
+		case SK_PROMOTE_BUTTON:
+			return SpriteButtonStateUpdate(&s->data.as_promoteButton.state, s->boundingBox);
+		case SK_GENERIC_BUTTON:
+			return SpriteButtonStateUpdate(&s->data.as_genericButton.state, s->boundingBox);
+		default:
+			return 0;
+	}
 }
 
 // Returns non-zero if the play state has ended early.
 int UpdatePlayButtons(GameContext *game)
 {
-	Vector2 mousePos = GetMousePosition();
-	// Check each button in the menu.
-	int didHover = 0; // can only hover 1 button
-	int didClick = 0; // can only click 1 button
-	for (int i = 0; i < arrlen(game->arrSprites); i++)
+	for (int i = 0; i < arrlen(game->arrUISprites); i++)
 	{
-		Sprite *s = &game->arrSprites[i];
-		if (s->data.kind != SK_GENERIC_BUTTON)
+		Sprite *s = &game->arrUISprites[i];
+		assert(SpriteIsUI(s));
+		int didActivate = SpriteButtonUpdate(s);
+		if (didActivate)
 		{
-			continue;
-		}
-		// Update hover fully and when a button starts to be clicked.
-		s->data.as_genericButton.isHover = 0;
-		s->data.as_genericButton.isClick = 0;
-		if (CheckCollisionPointRec(mousePos, s->boundingBox))
-		{
-			if (IsMouseButtonReleased(0))
+			// Quit to main menu
+			if (TextIsEqual(s->data.as_genericButton.refText, "Quit"))
 			{
-				// The current button has been clicked on.
-				const char *buttonText = s->data.as_genericButton.text;
-				if (TextIsEqual(buttonText, "Quit"))
-				{
-					GameSwitchState(game, GS_MAIN_MENU);
-					return 1;
-				}
-			}
-			else if (!didHover)
-			{
-				s->data.as_promoteButton.isHover = 1;
-				didHover = 1;
-				if (!didClick && IsMouseButtonDown(0))
-				{
-					s->data.as_promoteButton.isClick = 1;
-					didClick = 1;
-				}
+				GameSwitchState(game, GS_MAIN_MENU);
+				return 1;
 			}
 		}
 	}
@@ -2150,29 +2097,16 @@ void UpdatePlay(GameContext *game)
 					GameDoMoveNormalChess(game, col, row);
 					assert(!game->refSelectedSprite);
 					assert(!game->arrDraggedPieceMoves);
-					// Check for pawn promotion.
-					if (NormalChessGetPawnPromotion(game->normalChess))
-					{
-						// Do promotion. Coming back from promotion state will increment chess game turn.
-						PlaySound(game->soundEnterPromote);
-						GameSwitchState(game, GS_PLAY_PROMOTE);
-					}
-					else
-					{
-						// Was not a promotion, so increment chess game turn now.
-						game->normalChess->turn++;
-						if (NormalChessIsGameOver(game->normalChess))
-						{
-							// If the game is over, switch states.
-							GameSwitchState(game, GS_GAME_OVER);
-						}
-					}
+					GameSwitchState(game, GS_PLAY_ANIMATE);
+					return;
 				}
 			}
 			else
 			{
 				// Dragged piece off board -> reset piece sprite to original pos.
 				SpriteMoveToNormalChessPiece(game->refSelectedSprite, game);
+				game->refSelectedSprite = NULL;
+				UpdateMoveSquares(game);
 			}
 		}
 	}
@@ -2200,64 +2134,29 @@ void UpdatePlay(GameContext *game)
 			}
 		}
 	}
-	// Handle check
-	if (!game->handledCheck)
-	{
-		game->handledCheck = 1;
-		if (NormalChessIsKingInCheck(game->normalChess))
-		{
-			// Indicate that the current king is in check.
-			StopSound(game->soundMove);
-			StopSound(game->soundCapture);
-			PlaySound(game->soundCheck);
-		}
-	}
 }
 
 // Meant to be called from Update.
 void UpdatePlayPromote(GameContext *game)
 {
 	Vector2 mousePos = GetMousePosition();
-	if (CheckCollisionPointRec(mousePos, game->promotionMenuRect))
+	// Update all buttons
+	for (int i = 0; i < arrlen(game->arrUISprites); i++)
 	{
-		// Check each button in the menu.
-		int didHover = 0; // can only hover 1 button
-		int didClick = 0; // can only click 1 button
-		for (int i = 0; i < arrlen(game->arrSprites); i++)
+		SpriteButtonUpdate(&game->arrUISprites[i]);
+	}
+	for (int i = 0; i < arrlen(game->arrUISprites); i++)
+	{
+		Sprite *s = &game->arrUISprites[i];
+		if (s->data.kind == SK_PROMOTE_BUTTON && s->data.as_promoteButton.state == BS_ACTIVATED)
 		{
-			Sprite *s = &game->arrSprites[i];
-			if (s->data.kind != SK_PROMOTE_BUTTON)
-			{
-				continue;
-			}
-			// Update hover fully and when a button starts to be clicked.
-			s->data.as_promoteButton.isHover = 0;
-			s->data.as_promoteButton.isClick = 0;
-			if (CheckCollisionPointRec(mousePos, s->boundingBox))
-			{
-				if (IsMouseButtonReleased(0))
-				{
-					// The current button has been clicked on.
-					// Promote the pawn with the selection.
-					PlaySound(game->soundPromote);
-					assert(game->refSelectedSprite);
-					NormalChessPiece *p = game->refSelectedSprite->data.as_normalChessPiece;
-					p->kind = s->data.as_promoteButton.pieceKind;
-					game->refSelectedSprite->textureRect = NormalChessKindToTextureRect(p->kind);
-					GameSwitchState(game, GS_PLAY);
-					break;
-				}
-				else if (!didHover)
-				{
-					s->data.as_promoteButton.isHover = 1;
-					didHover = 1;
-					if (!didClick && IsMouseButtonDown(0))
-					{
-						s->data.as_promoteButton.isClick = 1;
-						didClick = 1;
-					}
-				}
-			}
+			// The current button has been clicked on.
+			// Promote the pawn with the selection.
+			assert(game->refSelectedSprite);
+			NormalChessPiece *p = game->refSelectedSprite->data.as_normalChessPiece;
+			p->kind = s->data.as_promoteButton.pieceKind;
+			game->refSelectedSprite->textureRect = NormalChessKindToTextureRect(p->kind);
+			GameSwitchState(game, GS_PLAY);
 		}
 	}
 }
@@ -2292,12 +2191,7 @@ void UpdatePlayAnimate(GameContext *game)
 
 void UpdateDebug(GameContext *game)
 {
-	if (IsKeyReleased(KEY_R))
-	{
-		// [R] -> switch to play state (will reset play state)
-		GameSwitchState(game, GS_PLAY);
-	}
-	else if (IsKeyReleased(KEY_ZERO))
+	if (IsKeyReleased(KEY_ZERO))
 	{
 		// [0] -> set debug level to zero
 		game->isDebug = 0;
@@ -2309,7 +2203,7 @@ void UpdateDebug(GameContext *game)
 	}
 	else if (IsKeyReleased(KEY_MINUS))
 	{
-		// [-] -> Increase debug level
+		// [-] -> Decrease debug level
 		// Don't allow isDebug to go negative.
 		if (game->isDebug > 0)
 		{
@@ -2387,11 +2281,11 @@ void DrawSprite(const GameContext *game, const Sprite *s)
 				};
 				const Color fillColor = LIGHTGRAY;
 				Color outlineColor = GRAY;
-				if (s->data.as_promoteButton.isClick)
+				if (s->data.as_promoteButton.state == BS_ACTIVATED)
 				{
 					outlineColor = fillColor;
 				}
-				else if (s->data.as_promoteButton.isHover)
+				else if (s->data.as_promoteButton.state == BS_HOVER)
 				{
 					outlineColor = GREEN;
 				}
@@ -2415,16 +2309,16 @@ void DrawSprite(const GameContext *game, const Sprite *s)
 					.width = s->boundingBox.width - 2,
 					.height = s->boundingBox.height - 2,
 				};
-				if (s->data.as_genericButton.isClick)
+				if (s->data.as_genericButton.state == BS_ACTIVATED)
 				{
 					outlineColor = fillColor;
 				}
-				else if (s->data.as_genericButton.isHover)
+				else if (s->data.as_genericButton.state == BS_HOVER)
 				{
 					outlineColor = hoverColor;
 				}
 				DrawRectangleRec(shrunk, fillColor);
-				DrawTextCentered(s->data.as_genericButton.text, shrunk.x + shrunk.width/2,
+				DrawTextCentered(s->data.as_genericButton.refText, shrunk.x + shrunk.width/2,
 						shrunk.y + shrunk.height/2, 20, textColor);
 				DrawRectangleLinesEx(shrunk, 2, outlineColor);
 				break;
@@ -2495,63 +2389,16 @@ void DrawPlay(const GameContext *game)
 		}
 	}
 	// Draw buttons / menu / GUI
-	for (int i = 0; i < arrlen(game->arrSprites); i++)
+	for (int i = 0; i < arrlen(game->arrUISprites); i++)
 	{
-		Sprite *s = &game->arrSprites[i];
-		if (s->data.kind == SK_GENERIC_BUTTON)
-		{
-			DrawSprite(game, s);
-		}
+		Sprite *s = &game->arrUISprites[i];
+		assert(SpriteIsUI(s));
+		DrawSprite(game, s);
 	}
 	// Draw the selected sprite piece now so it is always on top.
 	if (game->refSelectedSprite)
 	{
 		DrawSprite(game, game->refSelectedSprite);
-	}
-	// Debug info
-	if (game->isDebug)
-	{
-		// draw list of sprites
-		if (game->isDebug >= 6)
-		{
-			char msg[100];
-			int scroll = -2 * (game->ticks % 100);
-			for (int i = 0; i < arrlen(game->arrSprites); i++)
-			{
-				Sprite *s = &game->arrSprites[i];
-				Color textColor = GREEN;
-				if (s == game->refSelectedSprite)
-				{
-					textColor = BLUE;
-				}
-				snprintf(msg, sizeof(msg), "#%2d: %s at (%3d, %3d)", i,
-						SpriteKindToStr(s->data.kind), (int)s->boundingBox.x,
-						(int)s->boundingBox.y);
-				DrawText(msg, 180, 30 + scroll + i * 18, 18, textColor);
-			}
-		}
-		// Normal chess debug
-		if (game->isDebug >= 1)
-		{
-			char msg[100];
-			int x1 = 15, y1 = 5;
-			snprintf(msg, sizeof(msg), "hasWhiteKingMoved:%d", game->normalChess->hasWhiteKingMoved);
-			DrawText(msg, x1, y1, 17, WHITE);
-			snprintf(msg, sizeof(msg), "hasWhiteKingsRookMoved:%d",
-					game->normalChess->hasWhiteKingsRookMoved);
-			DrawText(msg, x1, y1 + 17, 16, WHITE);
-			snprintf(msg, sizeof(msg), "hasWhiteQueensRookMoved:%d",
-					game->normalChess->hasWhiteQueensRookMoved);
-			DrawText(msg, x1, y1 + 17*2, 16, WHITE);
-			snprintf(msg, sizeof(msg), "hasBlackKingMoved:%d", game->normalChess->hasBlackKingMoved);
-			DrawText(msg, x1, y1 + 17*3, 16, WHITE);
-			snprintf(msg, sizeof(msg), "hasBlackKingsRookMoved:%d",
-					game->normalChess->hasBlackKingsRookMoved);
-			DrawText(msg, x1, y1 + 17*4, 16, WHITE);
-			snprintf(msg, sizeof(msg), "hasBlackQueensRookMoved:%d",
-					game->normalChess->hasBlackQueensRookMoved);
-			DrawText(msg, x1, y1 + 17*5, 16, WHITE);
-		}
 	}
 }
 
@@ -2651,9 +2498,9 @@ void DrawPlayPromote(const GameContext *game)
 	DrawText("Pawn Promotion", game->promotionMenuRect.x + textGapX, game->promotionMenuRect.y + textGapY,
 			20, BLUE);
 	// Draw button sprites.
-	for (int i = 0; i < arrlen(game->arrSprites); i++)
+	for (int i = 0; i < arrlen(game->arrUISprites); i++)
 	{
-		Sprite *s = &game->arrSprites[i];
+		Sprite *s = &game->arrUISprites[i];
 		if (s->data.kind == SK_PROMOTE_BUTTON)
 		{
 			DrawSprite(game, s);
@@ -2705,66 +2552,17 @@ void GameCleanup(GameContext *game)
 	// Make sure every pointer has been dealt with
 	assert(game->normalChess == NULL);
 	assert(game->arrDraggedPieceMoves == NULL);
+	assert(game->arrSprites == NULL);
+	assert(game->arrUISprites == NULL);
+	assert(game->refSelectedSprite == NULL);
+	assert(game->tmapBoard == NULL);
+	assert(game->tmapBackground == NULL);
 	// TODO: cleanup textures?
 }
 
 void Test(void)
 {
 	TestNormalChessMovesContains();
-}
-
-int main(void) {
-	Test();
-	// Init:
-    const int screenWidth = 600;
-    const int screenHeight = 480;
-    InitWindow(screenWidth, screenHeight, "Chess 2");
-	InitAudioDevice();
-    SetTargetFPS(30);
-	GameContext game = (GameContext)
-	{
-		.isDebug              = 0, // int for game debug value, higher number means more debug info
-		.ticks                = 0,
-		.stateTicks           = 0,
-		.handledCheck         = 0,
-		.normalChess          = NULL,
-		.arrDraggedPieceMoves = NULL,
-		.refSelectedSprite    = NULL,
-		.arrSprites           = NULL,
-		.tmapBoard            = NULL,
-		.tmapBackground       = NULL,
-		.state                = GS_PLAY, // initial state
-		.tileSize             = TEXTURE_TILE_SIZE * 2,
-		.texPieces            = LoadTexture("gfx/pieces.png"),
-		.texBoard             = LoadTexture("gfx/board.png"),
-		.texGUI               = LoadTexture("gfx/gui.png"),
-		.soundCapture         = LoadSound("sfx/capture.wav"),
-		.soundMove            = LoadSound("sfx/move.wav"),
-		.soundEnterPromote    = LoadSound("sfx/can promote.wav"),
-		.soundPromote         = LoadSound("sfx/promote.wav"),
-		.soundCheck           = LoadSound("sfx/check.wav"),
-		.soundCheckmate       = LoadSound("sfx/checkmate.wav"),
-		.soundCastle          = LoadSound("sfx/castle.wav"),
-		.soundError           = LoadSound("sfx/error.wav"),
-		.soundGameOver        = LoadSound("sfx/game over.wav"),
-		.soundResign          = LoadSound("sfx/resign.wav"),
-		.soundGameStart       = LoadSound("sfx/game start.wav"),
-	};
-	// Begin
-	PlaySound(game.soundGameStart);
-	GameEnterState(&game, GS_NONE);
-	// Main loop:
-    while (!WindowShouldClose()) {
-        Update(&game);
-        BeginDrawing();
-        Draw(&game);
-        EndDrawing();
-    }
-	// Clean up the game
-	GameCleanup(&game);
-	CloseAudioDevice();
-	CloseWindow();
-    return 0;
 }
 
 /* vi: set colorcolumn=101 textwidth=100 tabstop=4 noexpandtab: */
