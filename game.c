@@ -10,8 +10,9 @@
 #define abs(x) (((x) > 0)? (x) : -(x))
 #define sign(x) ((x)? (((x) > 0)? 1 : -1) : 0)
 
+// TODO: add detection of game-over.
+// TODO: add animation of pieces moving.
 // TODO: add gameplay buttons to quit, resign, restart, etc..
-// TODO: add detection of game-over
 // TODO: add game turn timers.
 // TODO: add sound effects: checkMate, resign, game over.
 // TODO: add particles.
@@ -515,6 +516,7 @@ int PiecesCountAtConst(const NormalChessPiece **arrPieces, int row, int col)
 
 NormalChessPiece *NormalChessGetPawnPromotion(NormalChess *chess)
 {
+	assert(chess);
 	for (int i = 0; i < arrlen(chess->arrPieces); i++)
 	{
 		NormalChessPiece *p = chess->arrPieces[i];
@@ -1393,9 +1395,17 @@ void GameCleanupState(GameContext *game)
 // Meant to be called by GameLeaveState.
 void GameLeaveStatePlay(GameContext *game, GameState next)
 {
-	if (next != GS_PLAY_PROMOTE && next != GS_GAME_OVER)
+	assert(game);
+	switch (next)
 	{
-		GameCleanupState(game);
+		case GS_PLAY_PROMOTE:
+		case GS_PLAY_ANIMATE:
+		case GS_GAME_OVER:
+			// Do nothing
+			break;
+		default:
+			GameCleanupState(game);
+			break;
 	}
 }
 
@@ -1738,18 +1748,6 @@ void GameEnterStatePlayAnimate(GameContext *game, GameState previous)
 {
 	assert(previous == GS_PLAY);
 	// TODO: setup for actually animating the pieces.
-	// Check for pawn promotion.
-	if (NormalChessGetPawnPromotion(game->normalChess))
-	{
-		// Do promotion. Coming back from promotion state will increment chess game turn.
-		GameSwitchState(game, GS_PLAY_PROMOTE);
-		return;
-	}
-	else
-	{
-		GameSwitchState(game, GS_PLAY);
-		return;
-	}
 }
 
 // Meant to be called by GameEnterState.
@@ -2186,7 +2184,19 @@ void UpdateMainMenu(GameContext *game)
 
 void UpdatePlayAnimate(GameContext *game)
 {
-	assert(0 && "not implemented yet");
+	// Check for pawn promotion.
+	if (NormalChessGetPawnPromotion(game->normalChess))
+	{
+		// Do promotion. Coming back from promotion state will increment chess game turn.
+		GameSwitchState(game, GS_PLAY_PROMOTE);
+		return;
+	}
+	else
+	{
+		// TODO animate stuff
+		GameSwitchState(game, GS_PLAY);
+		return;
+	}
 }
 
 void UpdateDebug(GameContext *game)
@@ -2447,7 +2457,7 @@ void DrawDebug(const GameContext *game)
 
 void DrawPlayAnimate(const GameContext *game)
 {
-	assert(0 && "not implemented yet");
+	// TODO: implement
 }
 
 void DrawPlayPromote(const GameContext *game)
