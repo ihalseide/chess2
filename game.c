@@ -8,16 +8,13 @@
 #include "tilemap.h"
 
 #define TEXTURE_TILE_SIZE 16
-#define HI_COLOR (Color){ GOLD.r, GOLD.g, GOLD.b, 128 }
-#define SELECT_COLOR (Color){ GREEN.r, GREEN.g, GREEN.b, 128 }
 
 #define abs(x) (((x) > 0)? (x) : -(x))
 #define sign(x) ((x)? (((x) > 0)? 1 : -1) : 0)
 
-// TODO: add nice tiles and background to the chess game.
 // TODO: add gameplay buttons to quit, resign, restart, etc..
 // TODO: add game turn timers.
-// TODO: add sound effects.
+// TODO: add sound effects: checkMate, resign, game over.
 // TODO: add particles.
 // TODO: add music.
 
@@ -131,20 +128,34 @@ typedef struct Sprite
 // function GameSwitchState(...) to switch states.
 typedef struct GameContext
 {
+	GameState state;  // see the note above this struct definition.
 	Texture2D texPieces;  // spritesheet textures for pieces
 	Texture2D texBoard;  // spritesheet textures for board and background
 	Texture2D texGUI;  // spritesheet textures for user interface specific stuff
+	Sound soundCapture;
+	Sound soundMove;
+	Sound soundPromote;
+	Sound soundEnterPromote;
+	Sound soundCheck;
+	Sound soundCheckmate;
+	Sound soundCastle;
+	Sound soundError;
+	Sound soundGameOver;
+	Sound soundGameStart;
+	Sound soundResign;
 	Vector2 boardOffset;  // pixels
 	Rectangle promotionMenuRect;
 	int isDebug;  // higher number generally means more info
-	int ticks;
+	int ticks;  // ticks since the program started
+	int stateTicks; // ticks since the current state was entered
 	int tileSize;
-	GameState state;  // see note above (12 lines above this one)
 	NormalChess *normalChess;
 	Vector2 *arrDraggedPieceMoves;  // board coordinates (col, row)
 	Sprite *arrSprites; // dynamic array of sprites
 	Sprite *refSelectedSprite;
+	TileMapComponent *tmapBoard;
 	TileMapComponent *tmapBackground;
+	int handledCheck;
 } GameContext;
 
 // Clamp value to a value between min and max, inclusive of min and max.
@@ -521,32 +532,6 @@ void NormalChessDestroy(NormalChess *p)
 	}
 	arrfree(p->arrPieces);
 	NormalChessFree(p);
-}
-
-void DrawChessBoard(int x0, int y0, int tileSize, int width, int height)
-{
-	Color light = BEIGE;
-	Color dark = BROWN;
-	for (int x = 0; x < width; x++)
-	{
-		for (int y = 0; y < height; y++)
-		{
-			Color color;
-			if (x % 2 == y %2)
-			{
-				color = light;
-			}
-			else
-			{
-				color = dark;
-			}
-			DrawRectangle(x0 + x * tileSize,
-					y0 + y * tileSize,
-					tileSize,
-					tileSize,
-					color);
-		}
-	}
 }
 
 // Rectangle slice of where a piece kind's texture is on
@@ -1484,10 +1469,18 @@ void GameCleanupState(GameContext *game)
 			assert(game->normalChess != NULL);
 			NormalChessDestroy(game->normalChess);
 			game->normalChess = NULL;
+			// Free background tilemap
+			assert(game->tmapBackground);
+			TileMapComponentFree(game->tmapBackground);
+			game->tmapBackground = NULL;
+			// Free board tilemap
+			assert(game->tmapBoard);
+			TileMapComponentFree(game->tmapBoard);
+			game->tmapBoard = NULL;
 			// Free sprites array
 			if (game->arrSprites)
 			{
-				// Note: assuming that no sprite "owns" a pointer to memory.
+				// Note: assuming that no sprite "owns" any pointers.
 				arrfree(game->arrSprites);
 				game->arrSprites = NULL;
 			}
@@ -1498,6 +1491,7 @@ void GameCleanupState(GameContext *game)
 				game->arrDraggedPieceMoves = NULL;
 			}
 			// Current piece is now invalid
+			game->refSelectedSprite = NULL;
 			break;
 		case GS_MAIN_MENU:
 			break;
@@ -1645,15 +1639,48 @@ void GameEnterStatePlayPromote(GameContext *game, GameState previous)
 	game->refSelectedSprite = SpritesArrFindNormalChessSpriteFor(game->arrSprites, promoteP);
 }
 
-void PlayInitBackground(GameContext *game)
+void PlayInitBackgroundTiles(GameContext *game)
 {
-	// Create empty tilemap
-	int tileSize = game->tileSize;
-	int x0 = game->boardOffset.x - tileSize * 2;
-	int y0 = game->boardOffset.y - tileSize * 1;
+	const int mapCols = 19;
+	const int mapRows = 15;
+	const int tileSize = game->tileSize;
+	const int x0 = 0;
+	const int y0 = 0;
 	assert(game);
-	assert(game->tmapBackground == NULL);
-	game->tmapBackground = TileMapComponentAlloc(x0, y0, tileSize, 12, 12);
+	assert(game->tmapBoard == NULL);
+	// Create empty tilemap
+	game->tmapBackground = TileMapComponentAlloc(x0, y0, tileSize, mapCols, mapRows);
+	// Fill with a single tile
+	TileInfo tile = (TileInfo)
+	{
+		.refTexture = &game->texBoard,
+		.x0 = 160,
+		.y0 = 32,
+	};
+	// Set the first tile
+	int id = TileMapComponentSet(game->tmapBackground, 0, 0, tile);
+	// Set the rest of the tiles to be the same
+	for (int col = 0; col < mapCols; col++)
+	{
+		for (int row = 0; row < mapRows; row++)
+		{
+			int *loc = TileMapGet(game->tmapBackground->map, col, row);
+			*loc = id;
+		}
+	}
+}
+
+void PlayInitBoardTiles(GameContext *game)
+{
+	const int mapCols = 11;
+	const int mapRows = 11;
+	const int tileSize = game->tileSize;
+	const int x0 = game->boardOffset.x - tileSize * 2;
+	const int y0 = game->boardOffset.y - tileSize * 1;
+	assert(game);
+	assert(game->tmapBoard == NULL);
+	// Create empty tilemap
+	game->tmapBoard = TileMapComponentAlloc(x0, y0, tileSize, mapCols, mapRows);
 	int row, col;
 	TileInfo tile = (TileInfo) { .refTexture = &game->texBoard };
 	// Top-left corner
@@ -1661,7 +1688,7 @@ void PlayInitBackground(GameContext *game)
 	row = 0;
 	tile.x0 = 0;
 	tile.y0 = 0;
-	TileMapComponentSet(game->tmapBackground, col, row, tile);
+	TileMapComponentSet(game->tmapBoard, col, row, tile);
 	// Top row
 	tile.x0 = tileSize;
 	tile.y0 = 0;
@@ -1669,14 +1696,14 @@ void PlayInitBackground(GameContext *game)
 	{
 		col = 2 + i;
 		row = 0;
-		TileMapComponentSet(game->tmapBackground, col, row, tile);
+		TileMapComponentSet(game->tmapBoard, col, row, tile);
 	}
 	// Top-right corner
 	col = 10;
 	row = 0;
 	tile.x0 = tileSize * 2;
 	tile.y0 = 0;
-	TileMapComponentSet(game->tmapBackground, col, row, tile);
+	TileMapComponentSet(game->tmapBoard, col, row, tile);
 	// Right column
 	tile.x0 = tileSize * 2;
 	tile.y0 = tileSize;
@@ -1684,14 +1711,14 @@ void PlayInitBackground(GameContext *game)
 	{
 		col = 10;
 		row = 1 + i;
-		TileMapComponentSet(game->tmapBackground, col, row, tile);
+		TileMapComponentSet(game->tmapBoard, col, row, tile);
 	}
 	// Bottom-right corner
 	col = 10;
 	row = 9;
 	tile.x0 = tileSize * 2;
 	tile.y0 = tileSize * 2;
-	TileMapComponentSet(game->tmapBackground, col, row, tile);
+	TileMapComponentSet(game->tmapBoard, col, row, tile);
 	// Bottom row
 	row = 9;
 	tile.x0 = tileSize;
@@ -1700,18 +1727,18 @@ void PlayInitBackground(GameContext *game)
 	{
 		col = 2 + i;
 		// Extra range check
-		if (col >= game->tmapBackground->map->columns)
+		if (col >= game->tmapBoard->map->columns)
 		{
 			break;
 		}
-		TileMapComponentSet(game->tmapBackground, col, row, tile);
+		TileMapComponentSet(game->tmapBoard, col, row, tile);
 	}
 	// Bottom-left corner
 	col = 1;
 	row = 9;
 	tile.x0 = 0;
 	tile.y0 = tileSize * 2;
-	TileMapComponentSet(game->tmapBackground, col, row, tile);
+	TileMapComponentSet(game->tmapBoard, col, row, tile);
 	// Left column
 	tile.x0 = 0;
 	tile.y0 = tileSize;
@@ -1719,7 +1746,7 @@ void PlayInitBackground(GameContext *game)
 	for (int i = 0; i < 8; i++)
 	{
 		row = 1 + i;
-		TileMapComponentSet(game->tmapBackground, col, row, tile);
+		TileMapComponentSet(game->tmapBoard, col, row, tile);
 	}
 	// Row labels
 	tile.y0 = tileSize * 4;
@@ -1728,7 +1755,7 @@ void PlayInitBackground(GameContext *game)
 	{
 		row = 1 + i;
 		tile.x0 = (7 - i) * tileSize;
-		TileMapComponentSet(game->tmapBackground, col, row, tile);
+		TileMapComponentSet(game->tmapBoard, col, row, tile);
 	}
 	// Column labels
 	tile.y0 = tileSize * 3;
@@ -1737,7 +1764,30 @@ void PlayInitBackground(GameContext *game)
 	{
 		col = 2 + i;
 		tile.x0 = i * tileSize;
-		TileMapComponentSet(game->tmapBackground, col, row, tile);
+		TileMapComponentSet(game->tmapBoard, col, row, tile);
+	}
+	// Chess board checkered tiles
+	tile.y0 = 0;
+	TileInfo light, dark;
+	light = tile;
+	light.x0 = 96;
+	dark = tile;
+	dark.x0 = 128;
+	for (int row = 0; row < 8; row++)
+	{
+		for (int col = 0; col < 8; col++)
+		{
+			int tCol = col + 2;
+			int tRow = row + 1;
+			if (row % 2 == col % 2)
+			{
+				TileMapComponentSet(game->tmapBoard, tCol, tRow, light);
+			}
+			else
+			{
+				TileMapComponentSet(game->tmapBoard, tCol, tRow, dark);
+			}
+		}
 	}
 }
 
@@ -1758,8 +1808,9 @@ void GameEnterStatePlay(GameContext *game, GameState previous)
 		game->arrDraggedPieceMoves = NULL;
 		game->refSelectedSprite = NULL;
 		game->arrSprites = NULL;
-		// Initialize the background tile map.
-		PlayInitBackground(game);
+		// Initialize the tile maps.
+		PlayInitBackgroundTiles(game);
+		PlayInitBoardTiles(game);
 		// Initialize game sprites from normal chess pieces.
 		assert(!game->arrSprites);
 		game->arrSprites = SpritesArrCreateNormalChess(game);
@@ -1805,6 +1856,8 @@ void GameEnterStateMainMenu(GameContext *game, GameState previous)
 void GameEnterState(GameContext *game, GameState previous)
 {
 	assert(game);
+	// Reset state tick timer
+	game->stateTicks = 0;
 	_Static_assert(_GS_COUNT == 6, "exhaustive handling of all GameState's");
 	switch (game->state)
 	{
@@ -1904,7 +1957,7 @@ void UpdateMoveSquares(GameContext *game)
 // Does: get info about whether a chess move is a capture and what the object (acted-upon piece) is.
 // Returns values through object and isCapture.
 NormalChessPiece *NormalChessMoveGetObjectInfo(NormalChess *chess, NormalChessMove move, 
-		NormalChessPiece **object, int *isCapture)
+		NormalChessPiece **object, int *isCapture, int *isCastle)
 {
 	NormalChessPiece *moveSubject = NormalChessMoveGetSubject(move, chess->arrPieces);
 	NormalChessPiece *moveObject = NormalChessMoveGetObject(move, chess->arrPieces);
@@ -1918,12 +1971,14 @@ NormalChessPiece *NormalChessMoveGetObjectInfo(NormalChess *chess, NormalChessMo
 			case BLACK_KING:
 				// King castling
 				if (isCapture) { *isCapture = 0; }
+				if (isCastle)  { *isCastle = 1; }
 				if (object)    { *object = moveObject; }
 				break;
 			case WHITE_PAWN:
 			case BLACK_PAWN:
 				// En passant or double move
 				if (isCapture) { *isCapture = move.targetCol != move.subjectCol; }
+				if (isCastle)  { *isCastle = 0; }
 				if (object)    { *object = moveObject; }
 				break;
 			default:
@@ -1935,11 +1990,12 @@ NormalChessPiece *NormalChessMoveGetObjectInfo(NormalChess *chess, NormalChessMo
 	{
 		// Normal move case:
 		if (object)    { *object = moveObject; }
+		if (isCastle)  { *isCastle = 0; }
 		if (isCapture) { *isCapture = (moveObject != NULL); }
 	}
 }
 
-// Move the selected piece to the target.
+// Move the selected piece to the target. Also resets the handledCheck flag to 0.
 void GameDoMoveNormalChess(GameContext *game, int targetCol, int targetRow)
 {
 	assert(targetRow >= 0 && targetRow <= 7);
@@ -1955,8 +2011,8 @@ void GameDoMoveNormalChess(GameContext *game, int targetCol, int targetRow)
 			targetRow);
 	// Create move info for handling the sprites after doing the chess move.
 	NormalChessPiece *object;
-	int isCapture;
-	NormalChessMoveGetObjectInfo(game->normalChess, theMove, &object, &isCapture);
+	int isCapture, isCastle;
+	NormalChessMoveGetObjectInfo(game->normalChess, theMove, &object, &isCapture, &isCastle);
 	// Do chess game move and sprite move.
 	NormalChessDoMove(game->normalChess, theMove);
 	SpriteMoveToNormalChessPiece(game->refSelectedSprite, game);
@@ -1976,12 +2032,28 @@ void GameDoMoveNormalChess(GameContext *game, int targetCol, int targetRow)
 			SpriteMoveToNormalChessPiece(objectSprite, game);
 		}
 	}
+	// Play sound
+	if (isCapture)
+	{
+		PlaySound(game->soundCapture);
+	}
+	else if (isCastle)
+	{
+		PlaySound(game->soundCastle);
+	}
+	else
+	{
+		PlaySound(game->soundMove);
+	}
 	// De-select the selected sprite and remove highlights.
 	game->refSelectedSprite = NULL;
 	UpdateMoveSquares(game);
+	// Clear the handledCheck flag
+	game->handledCheck = 0;
 }
 
-void UpdatePlayButtons(GameContext *game)
+// Returns non-zero if the play state has ended early.
+int UpdatePlayButtons(GameContext *game)
 {
 	Vector2 mousePos = GetMousePosition();
 	// Check each button in the menu.
@@ -2006,7 +2078,7 @@ void UpdatePlayButtons(GameContext *game)
 				if (TextIsEqual(buttonText, "Quit"))
 				{
 					GameSwitchState(game, GS_MAIN_MENU);
-					break;
+					return 1;
 				}
 			}
 			else if (!didHover)
@@ -2021,6 +2093,7 @@ void UpdatePlayButtons(GameContext *game)
 			}
 		}
 	}
+	return 0;
 }
 
 void UpdatePlay(GameContext *game)
@@ -2028,7 +2101,10 @@ void UpdatePlay(GameContext *game)
 	Vector2 mousePos = GetMousePosition();
 	// Minimum dist. from tile center for dragging piece sprite:
 	const int drag = (game->tileSize/2) * (game->tileSize/2);
-	UpdatePlayButtons(game);
+	if (UpdatePlayButtons(game))
+	{
+		return;
+	}
 	if (IsMouseButtonPressed(0))
 	{
 		// Handle mouse first pressed.
@@ -2059,34 +2135,43 @@ void UpdatePlay(GameContext *game)
 		// TODO: handle mouse release.
 		if (game->refSelectedSprite)
 		{
-			SpriteMoveToNormalChessPiece(game->refSelectedSprite, game);
-			int col, row;
-			ScreenToNormalChessPos(mousePos.x, mousePos.y, game->boardOffset.x, game->boardOffset.y,
-					game->tileSize, &row, &col);
-			Vector2 mouseSquare = (Vector2){ col, row };
-			if (Vector2ArrFind(game->arrDraggedPieceMoves, mouseSquare))
+			if (GameIsPointOnBoard(game, mousePos))
 			{
-				// Released mouse over a valid movement square for the piece.
-				// Do the chess game move. Do not increment game turn yet.
-				GameDoMoveNormalChess(game, col, row);
-				assert(!game->refSelectedSprite);
-				assert(!game->arrDraggedPieceMoves);
-				// Check for pawn promotion.
-				if (NormalChessGetPawnPromotion(game->normalChess))
+				SpriteMoveToNormalChessPiece(game->refSelectedSprite, game);
+				int col, row;
+				ScreenToNormalChessPos(mousePos.x, mousePos.y, game->boardOffset.x, game->boardOffset.y,
+						game->tileSize, &row, &col);
+				Vector2 mouseSquare = (Vector2){ col, row };
+				if (Vector2ArrFind(game->arrDraggedPieceMoves, mouseSquare))
 				{
-					// Do promotion. Coming back from promotion state will increment chess game turn.
-					GameSwitchState(game, GS_PLAY_PROMOTE);
-				}
-				else
-				{
-					// Was not a promotion, so increment chess game turn now.
-					game->normalChess->turn++;
-					if (NormalChessIsGameOver(game->normalChess))
+					// Released mouse over a valid movement square for the piece.
+					// Do the chess game move. Do not increment game turn yet.
+					GameDoMoveNormalChess(game, col, row);
+					assert(!game->refSelectedSprite);
+					assert(!game->arrDraggedPieceMoves);
+					// Check for pawn promotion.
+					if (NormalChessGetPawnPromotion(game->normalChess))
 					{
-						// If the game is over, switch states.
-						GameSwitchState(game, GS_GAME_OVER);
+						// Do promotion. Coming back from promotion state will increment chess game turn.
+						PlaySound(game->soundEnterPromote);
+						GameSwitchState(game, GS_PLAY_PROMOTE);
+					}
+					else
+					{
+						// Was not a promotion, so increment chess game turn now.
+						game->normalChess->turn++;
+						if (NormalChessIsGameOver(game->normalChess))
+						{
+							// If the game is over, switch states.
+							GameSwitchState(game, GS_GAME_OVER);
+						}
 					}
 				}
+			}
+			else
+			{
+				// Dragged piece off board -> reset piece sprite to original pos.
+				SpriteMoveToNormalChessPiece(game->refSelectedSprite, game);
 			}
 		}
 	}
@@ -2112,6 +2197,18 @@ void UpdatePlay(GameContext *game)
 			{
 				SpriteMoveCenter(game->refSelectedSprite, mousePos.x, mousePos.y);
 			}
+		}
+	}
+	// Handle check
+	if (!game->handledCheck)
+	{
+		game->handledCheck = 1;
+		if (NormalChessIsKingInCheck(game->normalChess))
+		{
+			// Indicate that the current king is in check.
+			StopSound(game->soundMove);
+			StopSound(game->soundCapture);
+			PlaySound(game->soundCheck);
 		}
 	}
 }
@@ -2141,6 +2238,7 @@ void UpdatePlayPromote(GameContext *game)
 				{
 					// The current button has been clicked on.
 					// Promote the pawn with the selection.
+					PlaySound(game->soundPromote);
 					assert(game->refSelectedSprite);
 					NormalChessPiece *p = game->refSelectedSprite->data.as_normalChessPiece;
 					p->kind = s->data.as_promoteButton.pieceKind;
@@ -2243,6 +2341,7 @@ void Update(GameContext *game) {
 	}
 	UpdateDebug(game);
 	game->ticks++;
+	game->stateTicks++;
 }
 
 // Draw a slice of a texture centered in the bounds rectangle.
@@ -2346,30 +2445,39 @@ void DrawPlay(const GameContext *game)
 {
 	assert(game);
 	assert(game->normalChess);
-	int x0 = game->boardOffset.x;
-	int y0 = game->boardOffset.y;
-	int tileSize = game->tileSize;
-	ClearBackground(DARKGREEN);
-	// Draw chess board and tiles
-	DrawChessBoard(x0, y0, tileSize, 8, 8);
+	const int x0 = game->boardOffset.x;
+	const int y0 = game->boardOffset.y;
+	const int tileSize = game->tileSize;
+	const int trans = 180; // highlight square texture transparency
 	DrawTileMapComponent(game->tmapBackground);
+	// Draw chess board & tiles
+	DrawTileMapComponent(game->tmapBoard);
 	// Draw move highlight squares.
-	for (int i = 0; i < arrlen(game->arrDraggedPieceMoves); i++)
+	if (game->arrDraggedPieceMoves)
 	{
-		Vector2 pos = game->arrDraggedPieceMoves[i];
-		int x, y;
-		NormalChessPosToScreen(pos.y, pos.x, x0, y0, tileSize, &x, &y);
-		DrawRectangle(x, y, tileSize, tileSize, HI_COLOR);
+		const Rectangle hiSlice = (Rectangle){ .x = 192, .y = 32, .width = 32, .height = 32 };
+		const Color tint = (Color){ 255, 255, 255, trans };
+		for (int i = 0; i < arrlen(game->arrDraggedPieceMoves); i++)
+		{
+			Vector2 pos = game->arrDraggedPieceMoves[i];
+			int x, y;
+			NormalChessPosToScreen(pos.y, pos.x, x0, y0, tileSize, &x, &y);
+			Vector2 pos2 = (Vector2){ x, y };
+			DrawTextureRec(game->texBoard, hiSlice, pos2, tint);
+		}
 	}
 	// Draw selected piece highlight square.
 	if (game->refSelectedSprite)
 	{
 		const NormalChessPiece *p = game->refSelectedSprite->data.as_normalChessPiece;
+		const Color tint = (Color){ 255, 255, 255, trans };
 		if (p)
 		{
 			int x, y;
 			NormalChessPosToScreen(p->row, p->col, x0, y0, tileSize, &x, &y);
-			DrawRectangle(x, y, tileSize, tileSize, SELECT_COLOR);
+			Rectangle selSlice = (Rectangle){ .x = 224, .y = 32, .width = 32, .height = 32 };
+			Vector2 pos = (Vector2){ x, y };
+			DrawTextureRec(game->texBoard, selSlice, pos, tint);
 		}
 	}
 	// Draw normal chess sprites except for the selected one.
@@ -2386,15 +2494,15 @@ void DrawPlay(const GameContext *game)
 		}
 	}
 	// Draw buttons / menu / GUI
-	//for (int i = 0; i < arrlen(game->arrSprites); i++)
-	//{
-	//	Sprite *s = &game->arrSprites[i];
-	//	if (s->data.kind == SK_GENERIC_BUTTON)
-	//	{
-	//		DrawSprite(game, s);
-	//	}
-	//}
-	// Draw the selected one now so it is always on top.
+	for (int i = 0; i < arrlen(game->arrSprites); i++)
+	{
+		Sprite *s = &game->arrSprites[i];
+		if (s->data.kind == SK_GENERIC_BUTTON)
+		{
+			DrawSprite(game, s);
+		}
+	}
+	// Draw the selected sprite piece now so it is always on top.
 	if (game->refSelectedSprite)
 	{
 		DrawSprite(game, game->refSelectedSprite);
@@ -2466,6 +2574,8 @@ void DrawMainMenu(const GameContext *game)
 	DrawTexturePro(texture, slice, dest, origin, rotation, tint);
 }
 
+// Draw additional debug info regardless of what the game state is.
+// Game-state specific code should be in the state's own draw function.
 void DrawDebug(const GameContext *game)
 {
 	if (!game->isDebug)
@@ -2483,6 +2593,7 @@ void DrawDebug(const GameContext *game)
 	{
 		// Tick count
 		DrawText(TextFormat("game ticks: %d", game->ticks), 10, 36, 20, GREEN);
+		DrawText(TextFormat("state ticks: %d", game->stateTicks), 10, 56, 20, GREEN);
 	}
 }
 
@@ -2575,6 +2686,18 @@ void Draw(const GameContext *game) {
 	DrawDebug(game);
 }
 
+// Reset the game's current state.
+// Note: not guaranteed for the game state to have it's variables correctly set up because some
+// things must be set by the previous state, e.g: GS_PLAY_PROMOTE needs to be correctly set up by
+// GS_PLAY. 
+void GameResetState(GameContext *game)
+{
+	assert(game);
+	assert(game->state != GS_NONE);
+	GameLeaveState(game, GS_NONE);
+	GameEnterState(game, GS_NONE);
+}
+
 void GameCleanup(GameContext *game)
 {
 	GameCleanupState(game);
@@ -2595,22 +2718,39 @@ int main(void) {
     const int screenWidth = 600;
     const int screenHeight = 480;
     InitWindow(screenWidth, screenHeight, "Chess 2");
+	InitAudioDevice();
     SetTargetFPS(30);
 	GameContext game = (GameContext)
 	{
-		.isDebug              = 0, // integer for game debug flag, higher number means more debug info
-		.state                = GS_PLAY,
+		.isDebug              = 0, // int for game debug value, higher number means more debug info
 		.ticks                = 0,
+		.stateTicks           = 0,
+		.handledCheck         = 0,
 		.normalChess          = NULL,
-		.tileSize             = TEXTURE_TILE_SIZE * 2,
 		.arrDraggedPieceMoves = NULL,
 		.refSelectedSprite    = NULL,
 		.arrSprites           = NULL,
+		.tmapBoard            = NULL,
+		.tmapBackground       = NULL,
+		.state                = GS_PLAY, // initial state
+		.tileSize             = TEXTURE_TILE_SIZE * 2,
 		.texPieces            = LoadTexture("gfx/pieces.png"),
 		.texBoard             = LoadTexture("gfx/board.png"),
 		.texGUI               = LoadTexture("gfx/gui.png"),
-		.tmapBackground       = NULL,
+		.soundCapture         = LoadSound("sfx/capture.wav"),
+		.soundMove            = LoadSound("sfx/move.wav"),
+		.soundEnterPromote    = LoadSound("sfx/can promote.wav"),
+		.soundPromote         = LoadSound("sfx/promote.wav"),
+		.soundCheck           = LoadSound("sfx/check.wav"),
+		.soundCheckmate       = LoadSound("sfx/checkmate.wav"),
+		.soundCastle          = LoadSound("sfx/castle.wav"),
+		.soundError           = LoadSound("sfx/error.wav"),
+		.soundGameOver        = LoadSound("sfx/game over.wav"),
+		.soundResign          = LoadSound("sfx/resign.wav"),
+		.soundGameStart       = LoadSound("sfx/game start.wav"),
 	};
+	// Begin
+	PlaySound(game.soundGameStart);
 	GameEnterState(&game, GS_NONE);
 	// Main loop:
     while (!WindowShouldClose()) {
@@ -2621,6 +2761,7 @@ int main(void) {
     }
 	// Clean up the game
 	GameCleanup(&game);
+	CloseAudioDevice();
 	CloseWindow();
     return 0;
 }

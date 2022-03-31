@@ -32,6 +32,6 @@ int *TileMapGet(TileMap *map, int col, int row);
 void TileMapComponentFree(TileMapComponent *p);
 void TileMapFree(TileMap *p);
 void DrawTileMapComponent(TileMapComponent *tmap);
-void TileMapComponentSet(TileMapComponent *tmap, int col, int row, TileInfo tile);
+int TileMapComponentSet(TileMapComponent *tmap, int col, int row, TileInfo tile);
 
 #endif /* _TILE_MAP_H */

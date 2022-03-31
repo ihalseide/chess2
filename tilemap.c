@@ -115,7 +115,8 @@ static int TileInfoArrFind(const TileInfo *arrTileInfo, TileInfo t)
 }
 
 // May grow the TileMapComponent's arrTileInfo dynamic array.
-void TileMapComponentSet(TileMapComponent *tmap, int col, int row, TileInfo tile)
+// Returns the tile id that was chosen.
+int TileMapComponentSet(TileMapComponent *tmap, int col, int row, TileInfo tile)
 {
 	if (0 <= col && col < tmap->map->columns && 0 <= row && row < tmap->map->rows)
 	{
@@ -131,6 +132,8 @@ void TileMapComponentSet(TileMapComponent *tmap, int col, int row, TileInfo tile
 		{
 			*loc = id;
 		}
+		return id;
 	}
+	return -1;
 }
 
