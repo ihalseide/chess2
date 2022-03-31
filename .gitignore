@@ -1,5 +1,8 @@
 # VIM editor
 *.swp
 
+# Build
 game
+*.o
+*.gch
 
