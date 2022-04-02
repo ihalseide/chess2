@@ -1483,7 +1483,7 @@ void GameLeaveState(GameContext *game, GameState next)
 // Meant to be called by GameEnterState.
 void GameEnterStatePlayPromote(GameContext *game, GameState previous)
 {
-	assert(previous == GS_PLAY);
+	assert(previous == GS_PLAY_ANIMATE);
 	assert(game->normalChess);
 	PlaySound(game->soundEnterPromote);
 	const int menuWidth = 170; // px
