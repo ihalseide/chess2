@@ -16,7 +16,6 @@
 // TODO: add game turn timers.
 // TODO: add sound effects: checkMate, resign, game over.
 // TODO: add particles.
-// TODO: add music.
 
 // Clamp value to a value between min and max, inclusive of min and max.
 void IntClamp(int *value, int min, int max)
@@ -2042,6 +2041,10 @@ int UpdatePlayButtons(GameContext *game)
 	return 0;
 }
 
+// Note: when the chess move is valid and the game must update, then these game state transitions
+// occur:
+// * If the move is not a pawn promotion: GS_PLAY -> GS_ANIMATE -> GS_PLAY
+// * If the move is a pawn promotion: GS_PLAY -> GS_PLAY_PROMOTE -> GS_ANIMATE -> GS_PLAY
 void UpdatePlay(GameContext *game)
 {
 	Vector2 mousePos = GetMousePosition();
@@ -2135,6 +2138,10 @@ void UpdatePlay(GameContext *game)
 }
 
 // Meant to be called from Update.
+// Note: when the chess move is valid and the game must update, then these game state transitions
+// occur:
+// * If the move is not a pawn promotion: GS_PLAY -> GS_ANIMATE -> GS_PLAY
+// * If the move is a pawn promotion: GS_PLAY -> GS_PLAY_PROMOTE -> GS_ANIMATE -> GS_PLAY
 void UpdatePlayPromote(GameContext *game)
 {
 	Vector2 mousePos = GetMousePosition();
@@ -2154,7 +2161,7 @@ void UpdatePlayPromote(GameContext *game)
 			NormalChessPiece *p = game->refSelectedSprite->data.as_normalChessPiece;
 			p->kind = s->data.as_promoteButton.pieceKind;
 			game->refSelectedSprite->textureRect = NormalChessKindToTextureRect(p->kind);
-			GameSwitchState(game, GS_PLAY);
+			GameSwitchState(game, GS_PLAY_ANIMATE);
 		}
 	}
 }
@@ -2182,6 +2189,10 @@ void UpdateMainMenu(GameContext *game)
 	}
 }
 
+// Note: when the chess move is valid and the game must update, then these game state transitions
+// occur:
+// * If move is not a pawn promotion: GS_PLAY -> GS_ANIMATE -> GS_PLAY
+// * If move is a pawn promotion: GS_PLAY -> GS_ANIMATE -> GS_PLAY_PROMOTE -> GS_ANIMATE -> GS_PLAY
 void UpdatePlayAnimate(GameContext *game)
 {
 	// Check for pawn promotion.
